@@ -721,12 +721,24 @@ public:
             getValue(STEPPER_STROKE_MAX_HZ, StepperStrokeMaxHz);
             if(targeted) {initCommonMessages(name); return;}
         }
+        if(!name || !strcmp(name, STEPPER_STROKE_ACCEL)) {
+            getValue(STEPPER_STROKE_ACCEL, StepperStrokeAccel);
+            if(targeted) {initCommonMessages(name); return;}
+        }
         if(!name || !strcmp(name, STEPPER_ROLL_MAX_HZ)) {
             getValue(STEPPER_ROLL_MAX_HZ, StepperRollMaxHz);
             if(targeted) {initCommonMessages(name); return;}
         }
+        if(!name || !strcmp(name, STEPPER_ROLL_ACCEL)) {
+            getValue(STEPPER_ROLL_ACCEL, StepperRollAccel);
+            if(targeted) {initCommonMessages(name); return;}
+        }
         if(!name || !strcmp(name, STEPPER_PITCH_MAX_HZ)) {
             getValue(STEPPER_PITCH_MAX_HZ, StepperPitchMaxHz);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_PITCH_ACCEL)) {
+            getValue(STEPPER_PITCH_ACCEL, StepperPitchAccel);
             if(targeted) {initCommonMessages(name); return;}
         }
         if(!name || !strcmp(name, STEPPER_STROKE_INVERT)) {
@@ -994,9 +1006,12 @@ private:
             ,{STEPPER_STROKE_RANGE, "Stroke travel (steps)", "Total travel in steps for the stroke axis (0-9999 maps across this span)", SettingType::Number, STEPPER_STROKE_RANGE_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper}},
             {STEPPER_ROLL_RANGE, "Roll travel (steps)", "Total travel in steps for the roll axis", SettingType::Number, STEPPER_ROLL_RANGE_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper}},
             {STEPPER_PITCH_RANGE, "Pitch travel (steps)", "Total travel in steps for the pitch axis", SettingType::Number, STEPPER_PITCH_RANGE_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper}},
-            {STEPPER_STROKE_MAX_HZ, "Stroke max Hz", "Maximum step frequency for stroke axis", SettingType::Number, STEPPER_STROKE_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
-            {STEPPER_ROLL_MAX_HZ, "Roll max Hz", "Maximum step frequency for roll axis", SettingType::Number, STEPPER_ROLL_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
-            {STEPPER_PITCH_MAX_HZ, "Pitch max Hz", "Maximum step frequency for pitch axis", SettingType::Number, STEPPER_PITCH_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {STEPPER_STROKE_MAX_HZ, "Stroke max Hz", "Maximum step frequency for stroke axis", SettingType::Number, STEPPER_STROKE_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
+            {STEPPER_ROLL_MAX_HZ, "Roll max Hz", "Maximum step frequency for roll axis", SettingType::Number, STEPPER_ROLL_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
+            {STEPPER_PITCH_MAX_HZ, "Pitch max Hz", "Maximum step frequency for pitch axis", SettingType::Number, STEPPER_PITCH_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
+            {STEPPER_STROKE_ACCEL, "Stroke accel", "Acceleration in steps/s^2 for stroke axis", SettingType::Number, STEPPER_STROKE_ACCEL_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
+            {STEPPER_ROLL_ACCEL, "Roll accel", "Acceleration in steps/s^2 for roll axis", SettingType::Number, STEPPER_ROLL_ACCEL_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
+            {STEPPER_PITCH_ACCEL, "Pitch accel", "Acceleration in steps/s^2 for pitch axis", SettingType::Number, STEPPER_PITCH_ACCEL_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
             {STEPPER_STROKE_INVERT, "Stroke dir invert", "Invert stroke stepper direction", SettingType::Boolean, STEPPER_STROKE_INVERT_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
             {STEPPER_ROLL_INVERT, "Roll dir invert", "Invert roll stepper direction", SettingType::Boolean, STEPPER_ROLL_INVERT_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
             {STEPPER_PITCH_INVERT, "Pitch dir invert", "Invert pitch stepper direction", SettingType::Boolean, STEPPER_PITCH_INVERT_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
@@ -1171,6 +1186,9 @@ private:
     int StepperStrokeMaxHz;
     int StepperRollMaxHz;
     int StepperPitchMaxHz;
+    int StepperStrokeAccel;
+    int StepperRollAccel;
+    int StepperPitchAccel;
     bool StepperStrokeInvert;
     bool StepperRollInvert;
     bool StepperPitchInvert;

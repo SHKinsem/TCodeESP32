@@ -2306,6 +2306,9 @@ function setStepperSettingsUI() {
     document.getElementById('StepperStrokeMaxHz').value = userSettings["StepperStrokeMaxHz"];
     document.getElementById('StepperRollMaxHz').value = userSettings["StepperRollMaxHz"];
     document.getElementById('StepperPitchMaxHz').value = userSettings["StepperPitchMaxHz"];
+    document.getElementById('StepperStrokeAccel').value = userSettings["StepperStrokeAccel"];
+    document.getElementById('StepperRollAccel').value = userSettings["StepperRollAccel"];
+    document.getElementById('StepperPitchAccel').value = userSettings["StepperPitchAccel"];
     document.getElementById('StepperStrokeInvert').checked = userSettings["StepperStrokeInvert"];
     document.getElementById('StepperRollInvert').checked = userSettings["StepperRollInvert"];
     document.getElementById('StepperPitchInvert').checked = userSettings["StepperPitchInvert"];
@@ -2326,6 +2329,9 @@ function updateStepperSettings() {
         validateIntControl('StepperStrokeMaxHz', userSettings, 'StepperStrokeMaxHz');
         validateIntControl('StepperRollMaxHz', userSettings, 'StepperRollMaxHz');
         validateIntControl('StepperPitchMaxHz', userSettings, 'StepperPitchMaxHz');
+        validateIntControl('StepperStrokeAccel', userSettings, 'StepperStrokeAccel');
+        validateIntControl('StepperRollAccel', userSettings, 'StepperRollAccel');
+        validateIntControl('StepperPitchAccel', userSettings, 'StepperPitchAccel');
         userSettings["StepperStrokeInvert"] = document.getElementById('StepperStrokeInvert').checked;
         userSettings["StepperRollInvert"] = document.getElementById('StepperRollInvert').checked;
         userSettings["StepperPitchInvert"] = document.getElementById('StepperPitchInvert').checked;

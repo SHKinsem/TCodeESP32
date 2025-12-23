@@ -71,11 +71,11 @@ public:
         m_tcode->RegisterAxis("R1", "Roll");
         m_tcode->RegisterAxis("R2", "Pitch");
 
-        if (!configureAxis(m_strokeAxis, m_pinMap->strokeStep(), m_pinMap->strokeDir(), STEPPER_STROKE_RANGE, STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_INVERT, STEPPER_STROKE_RANGE_DEFAULT, STEPPER_STROKE_MAX_HZ_DEFAULT))
+        if (!configureAxis(m_strokeAxis, m_pinMap->strokeStep(), m_pinMap->strokeDir(), STEPPER_STROKE_RANGE, STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_INVERT, STEPPER_STROKE_ACCEL, STEPPER_STROKE_RANGE_DEFAULT, STEPPER_STROKE_MAX_HZ_DEFAULT, STEPPER_STROKE_ACCEL_DEFAULT))
             m_initFailed = true;
-        if (!configureAxis(m_rollAxis, m_pinMap->rollStep(), m_pinMap->rollDir(), STEPPER_ROLL_RANGE, STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_INVERT, STEPPER_ROLL_RANGE_DEFAULT, STEPPER_ROLL_MAX_HZ_DEFAULT))
+        if (!configureAxis(m_rollAxis, m_pinMap->rollStep(), m_pinMap->rollDir(), STEPPER_ROLL_RANGE, STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_INVERT, STEPPER_ROLL_ACCEL, STEPPER_ROLL_RANGE_DEFAULT, STEPPER_ROLL_MAX_HZ_DEFAULT, STEPPER_ROLL_ACCEL_DEFAULT))
             m_initFailed = true;
-        if (!configureAxis(m_pitchAxis, m_pinMap->pitchStep(), m_pinMap->pitchDir(), STEPPER_PITCH_RANGE, STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_INVERT, STEPPER_PITCH_RANGE_DEFAULT, STEPPER_PITCH_MAX_HZ_DEFAULT))
+        if (!configureAxis(m_pitchAxis, m_pinMap->pitchStep(), m_pinMap->pitchDir(), STEPPER_PITCH_RANGE, STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_INVERT, STEPPER_PITCH_ACCEL, STEPPER_PITCH_RANGE_DEFAULT, STEPPER_PITCH_MAX_HZ_DEFAULT, STEPPER_PITCH_ACCEL_DEFAULT))
             m_initFailed = true;
 
         // AS5600 feedback is optional and only used on stroke for simple closed loop
@@ -165,6 +165,7 @@ private:
         FastAccelStepper *stepper = nullptr;
         long rangeHalf = 0;
         int maxHz = 1000;
+        int accel = 20000;
         bool invertDir = false;
         long lastTarget = 0;
     };
@@ -174,6 +175,8 @@ private:
     static constexpr int kMinStepperHz = 1;
     static constexpr int kConfigRefreshMs = 500; // refresh cached settings twice per second
     static constexpr int kDefaultAccel = 20000;   // steps/s^2
+    static constexpr int kMinAccel = 100;         // prevent zero/negative accel
+    static constexpr int kMaxAccel = 500000;      // reasonable upper bound
 
     const char * _TAG = TagHandler::MotorHandler;
     SettingsFactory *m_settingsFactory = nullptr;
@@ -206,7 +209,16 @@ private:
         return std::max(kMinStepperHz, std::min(kMaxStepperHz, maxHz));
     }
 
-    bool applyAxisConfig(StepperAxis &axis, const char *rangeKey, const char *maxHzKey, const char *invertKey, int rangeDefault, int maxHzDefault)
+    int clampAccel(int accel)
+    {
+        if (accel <= 0)
+        {
+            accel = kDefaultAccel;
+        }
+        return std::max(kMinAccel, std::min(kMaxAccel, accel));
+    }
+
+    bool applyAxisConfig(StepperAxis &axis, const char *rangeKey, const char *maxHzKey, const char *invertKey, const char *accelKey, int rangeDefault, int maxHzDefault, int accelDefault)
     {
         int rangeSteps = rangeDefault;
         m_settingsFactory->getValue(rangeKey, rangeSteps);
@@ -219,19 +231,28 @@ private:
         m_settingsFactory->getValue(maxHzKey, maxHz);
         maxHz = clampHz(maxHz);
 
+        int accel = accelDefault;
+        m_settingsFactory->getValue(accelKey, accel);
+        accel = clampAccel(accel);
+
         bool invertDir = false;
         m_settingsFactory->getValue(invertKey, invertDir);
 
+        const bool prevInvert = axis.invertDir;
         axis.rangeHalf = std::max(1, rangeSteps / 2);
         axis.maxHz = maxHz;
+        axis.accel = accel;
         axis.invertDir = invertDir;
 
         if (axis.stepper)
         {
             axis.stepper->setSpeedInHz(axis.maxHz);
-            axis.stepper->setAcceleration(kDefaultAccel);
-            // Refresh direction pin to apply inversion changes
-            axis.stepper->setDirectionPin(axis.dirPin, axis.invertDir);
+            axis.stepper->setAcceleration(axis.accel);
+            if (axis.invertDir != prevInvert)
+            {
+                // Only touch DIR polarity if the setting changed to avoid mid-move flips
+                axis.stepper->setDirectionPin(axis.dirPin, !axis.invertDir);
+            }
         }
 
         return true;
@@ -251,15 +272,16 @@ private:
             return false;
         }
 
-        axis.stepper->setDirectionPin(axis.dirPin, axis.invertDir);
+        // true means DIR high = count up; invert flips that
+        axis.stepper->setDirectionPin(axis.dirPin, !axis.invertDir);
         axis.stepper->setSpeedInHz(axis.maxHz);
-        axis.stepper->setAcceleration(kDefaultAccel);
+        axis.stepper->setAcceleration(axis.accel);
         axis.stepper->setCurrentPosition(0);
         axis.lastTarget = 0;
         return true;
     }
 
-    bool configureAxis(StepperAxis &axis, int8_t stepPin, int8_t dirPin, const char *rangeKey, const char *maxHzKey, const char *invertKey, int rangeDefault, int maxHzDefault)
+    bool configureAxis(StepperAxis &axis, int8_t stepPin, int8_t dirPin, const char *rangeKey, const char *maxHzKey, const char *invertKey, const char *accelKey, int rangeDefault, int maxHzDefault, int accelDefault)
     {
         if (stepPin < 0 || dirPin < 0)
         {
@@ -277,16 +299,16 @@ private:
         gpio_set_level(static_cast<gpio_num_t>(axis.stepPin), 0);
         gpio_set_level(static_cast<gpio_num_t>(axis.dirPin), 0);
 
-        applyAxisConfig(axis, rangeKey, maxHzKey, invertKey, rangeDefault, maxHzDefault);
+        applyAxisConfig(axis, rangeKey, maxHzKey, invertKey, accelKey, rangeDefault, maxHzDefault, accelDefault);
 
         return attachStepper(axis);
     }
 
     void refreshAxisConfigs()
     {
-        applyAxisConfig(m_strokeAxis, STEPPER_STROKE_RANGE, STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_INVERT, STEPPER_STROKE_RANGE_DEFAULT, STEPPER_STROKE_MAX_HZ_DEFAULT);
-        applyAxisConfig(m_rollAxis, STEPPER_ROLL_RANGE, STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_INVERT, STEPPER_ROLL_RANGE_DEFAULT, STEPPER_ROLL_MAX_HZ_DEFAULT);
-        applyAxisConfig(m_pitchAxis, STEPPER_PITCH_RANGE, STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_INVERT, STEPPER_PITCH_RANGE_DEFAULT, STEPPER_PITCH_MAX_HZ_DEFAULT);
+        applyAxisConfig(m_strokeAxis, STEPPER_STROKE_RANGE, STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_INVERT, STEPPER_STROKE_ACCEL, STEPPER_STROKE_RANGE_DEFAULT, STEPPER_STROKE_MAX_HZ_DEFAULT, STEPPER_STROKE_ACCEL_DEFAULT);
+        applyAxisConfig(m_rollAxis, STEPPER_ROLL_RANGE, STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_INVERT, STEPPER_ROLL_ACCEL, STEPPER_ROLL_RANGE_DEFAULT, STEPPER_ROLL_MAX_HZ_DEFAULT, STEPPER_ROLL_ACCEL_DEFAULT);
+        applyAxisConfig(m_pitchAxis, STEPPER_PITCH_RANGE, STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_INVERT, STEPPER_PITCH_ACCEL, STEPPER_PITCH_RANGE_DEFAULT, STEPPER_PITCH_MAX_HZ_DEFAULT, STEPPER_PITCH_ACCEL_DEFAULT);
     }
 
     void updateAxis(StepperAxis &axis, long target, int sensorValue)
@@ -299,7 +321,12 @@ private:
         if (sensorValue >= 0 && axis.rangeHalf > 0)
         {
             const long sensed = mapLong(sensorValue, m_as5600MinRaw, m_as5600MaxRaw, -axis.rangeHalf, axis.rangeHalf);
-            axis.stepper->setCurrentPosition(sensed);
+            const long currentPos = axis.stepper->getCurrentPosition();
+            // Ignore wildly out-of-range feedback to prevent direction flips
+            if (std::abs(sensed - currentPos) <= axis.rangeHalf)
+            {
+                axis.stepper->setCurrentPosition(sensed);
+            }
         }
 
         if (target != axis.lastTarget)
