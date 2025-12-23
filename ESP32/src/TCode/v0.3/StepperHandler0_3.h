@@ -24,7 +24,9 @@ SOFTWARE. */
 
 #include <Wire.h>
 #include <driver/gpio.h>
-#include <esp32/rom/ets_sys.h>
+#include <FastAccelStepper.h>
+#include <algorithm>
+#include <cmath>
 
 #include "TCode0_3.h"
 #include "SettingsHandler.h"
@@ -61,6 +63,8 @@ public:
             m_initFailed = true;
             return;
         }
+
+        m_engine.init();
 
         // Configure primary axes
         m_tcode->RegisterAxis("L0", "Stroke");
@@ -158,19 +162,18 @@ private:
     {
         int8_t stepPin = -1;
         int8_t dirPin = -1;
-        long currentSteps = 0;
-        long targetSteps = 0;
+        FastAccelStepper *stepper = nullptr;
         long rangeHalf = 0;
-        uint32_t lastStepMicros = 0;
-        uint32_t stepIntervalMicros = 1000;
+        int maxHz = 1000;
         bool invertDir = false;
+        long lastTarget = 0;
     };
 
-    // Limits to keep software stepping within a safe, realistic range
-    static constexpr int kMaxStepperHz = 5000;      // ~200 us period
+    // Limits to keep stepping within a safe, realistic range
+    static constexpr int kMaxStepperHz = 20000;     // library clamp
     static constexpr int kMinStepperHz = 1;
-    static constexpr uint32_t kMinStepHighUs = 2;   // hold step high for a couple microseconds
-    static constexpr uint32_t kConfigRefreshMs = 500; // refresh cached settings twice per second
+    static constexpr int kConfigRefreshMs = 500; // refresh cached settings twice per second
+    static constexpr int kDefaultAccel = 20000;   // steps/s^2
 
     const char * _TAG = TagHandler::MotorHandler;
     SettingsFactory *m_settingsFactory = nullptr;
@@ -181,6 +184,7 @@ private:
     StepperAxis m_rollAxis;
     StepperAxis m_pitchAxis;
     uint32_t m_lastConfigRefreshMs = 0;
+    FastAccelStepperEngine m_engine;
 
     int m_as5600Mode = 0; // 0=off, 1=I2C, 2=PWM
     int m_as5600I2CAddr = AS5600_I2C_ADDR_DEFAULT;
@@ -193,12 +197,13 @@ private:
         return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
     }
 
-    uint32_t computeStepInterval(int maxHz)
+    int clampHz(int maxHz)
     {
-        const int clampedHz = std::max(kMinStepperHz, std::min(kMaxStepperHz, maxHz));
-        uint32_t interval = 1000000UL / static_cast<uint32_t>(clampedHz);
-        // Ensure we always have room to hold the step pin high for the required pulse width
-        return std::max(interval, kMinStepHighUs + 1);
+        if (maxHz <= 0)
+        {
+            maxHz = kMinStepperHz;
+        }
+        return std::max(kMinStepperHz, std::min(kMaxStepperHz, maxHz));
     }
 
     bool applyAxisConfig(StepperAxis &axis, const char *rangeKey, const char *maxHzKey, const char *invertKey, int rangeDefault, int maxHzDefault)
@@ -212,17 +217,45 @@ private:
 
         int maxHz = maxHzDefault;
         m_settingsFactory->getValue(maxHzKey, maxHz);
-        if (maxHz <= 0)
-        {
-            maxHz = maxHzDefault;
-        }
+        maxHz = clampHz(maxHz);
 
         bool invertDir = false;
         m_settingsFactory->getValue(invertKey, invertDir);
 
         axis.rangeHalf = std::max(1, rangeSteps / 2);
-        axis.stepIntervalMicros = computeStepInterval(maxHz);
+        axis.maxHz = maxHz;
         axis.invertDir = invertDir;
+
+        if (axis.stepper)
+        {
+            axis.stepper->setSpeedInHz(axis.maxHz);
+            axis.stepper->setAcceleration(kDefaultAccel);
+            // Refresh direction pin to apply inversion changes
+            axis.stepper->setDirectionPin(axis.dirPin, axis.invertDir);
+        }
+
+        return true;
+    }
+
+    bool attachStepper(StepperAxis &axis)
+    {
+        if (axis.stepPin < 0 || axis.dirPin < 0)
+        {
+            return false;
+        }
+
+        axis.stepper = m_engine.stepperConnectToPin(axis.stepPin);
+        if (!axis.stepper)
+        {
+            LogHandler::error(_TAG, "Failed to attach stepper to pin %d", axis.stepPin);
+            return false;
+        }
+
+        axis.stepper->setDirectionPin(axis.dirPin, axis.invertDir);
+        axis.stepper->setSpeedInHz(axis.maxHz);
+        axis.stepper->setAcceleration(kDefaultAccel);
+        axis.stepper->setCurrentPosition(0);
+        axis.lastTarget = 0;
         return true;
     }
 
@@ -230,21 +263,23 @@ private:
     {
         if (stepPin < 0 || dirPin < 0)
         {
-            LogHandler::error(_TAG, "Invalid stepper pins step=%d dir=%d", stepPin, dirPin);
+            LogHandler::error(_TAG, "Invalid step/dir pins for axis (%d, %d)", stepPin, dirPin);
             return false;
         }
 
         axis.stepPin = stepPin;
         axis.dirPin = dirPin;
 
-        applyAxisConfig(axis, rangeKey, maxHzKey, invertKey, rangeDefault, maxHzDefault);
-
-        pinMode(axis.stepPin, OUTPUT);
-        pinMode(axis.dirPin, OUTPUT);
+        gpio_reset_pin(static_cast<gpio_num_t>(axis.stepPin));
+        gpio_reset_pin(static_cast<gpio_num_t>(axis.dirPin));
+        gpio_set_direction(static_cast<gpio_num_t>(axis.stepPin), GPIO_MODE_OUTPUT);
+        gpio_set_direction(static_cast<gpio_num_t>(axis.dirPin), GPIO_MODE_OUTPUT);
         gpio_set_level(static_cast<gpio_num_t>(axis.stepPin), 0);
         gpio_set_level(static_cast<gpio_num_t>(axis.dirPin), 0);
 
-        return true;
+        applyAxisConfig(axis, rangeKey, maxHzKey, invertKey, rangeDefault, maxHzDefault);
+
+        return attachStepper(axis);
     }
 
     void refreshAxisConfigs()
@@ -256,41 +291,22 @@ private:
 
     void updateAxis(StepperAxis &axis, long target, int sensorValue)
     {
-        if (axis.stepPin < 0 || axis.dirPin < 0)
+        if (!axis.stepper)
         {
             return;
         }
-
-        axis.targetSteps = target;
 
         if (sensorValue >= 0 && axis.rangeHalf > 0)
         {
             const long sensed = mapLong(sensorValue, m_as5600MinRaw, m_as5600MaxRaw, -axis.rangeHalf, axis.rangeHalf);
-            axis.currentSteps = sensed;
+            axis.stepper->setCurrentPosition(sensed);
         }
 
-        const long delta = axis.targetSteps - axis.currentSteps;
-        if (delta == 0)
+        if (target != axis.lastTarget)
         {
-            return;
+            axis.stepper->moveTo(target);
+            axis.lastTarget = target;
         }
-
-        const int dir = delta > 0 ? 1 : -1;
-        const bool dirHigh = axis.invertDir ? dir < 0 : dir > 0;
-        gpio_set_level(static_cast<gpio_num_t>(axis.dirPin), dirHigh ? 1 : 0);
-
-        const uint32_t now = micros();
-        if (now - axis.lastStepMicros < axis.stepIntervalMicros)
-        {
-            return;
-        }
-
-        gpio_set_level(static_cast<gpio_num_t>(axis.stepPin), 1);
-        ets_delay_us(kMinStepHighUs);
-        gpio_set_level(static_cast<gpio_num_t>(axis.stepPin), 0);
-
-        axis.currentSteps += dir;
-        axis.lastStepMicros = now;
     }
 
     int readAS5600()
