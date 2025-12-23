@@ -705,6 +705,58 @@ public:
             getValue(SQUEEZE_ZERO, SqueezeServo_ZERO);
             if(targeted) {initCommonMessages(name); return;}
         }
+        if(!name || !strcmp(name, STEPPER_STROKE_RANGE)) {
+            getValue(STEPPER_STROKE_RANGE, StepperStrokeRange);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_ROLL_RANGE)) {
+            getValue(STEPPER_ROLL_RANGE, StepperRollRange);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_PITCH_RANGE)) {
+            getValue(STEPPER_PITCH_RANGE, StepperPitchRange);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_STROKE_MAX_HZ)) {
+            getValue(STEPPER_STROKE_MAX_HZ, StepperStrokeMaxHz);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_ROLL_MAX_HZ)) {
+            getValue(STEPPER_ROLL_MAX_HZ, StepperRollMaxHz);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_PITCH_MAX_HZ)) {
+            getValue(STEPPER_PITCH_MAX_HZ, StepperPitchMaxHz);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_STROKE_INVERT)) {
+            getValue(STEPPER_STROKE_INVERT, StepperStrokeInvert);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_ROLL_INVERT)) {
+            getValue(STEPPER_ROLL_INVERT, StepperRollInvert);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, STEPPER_PITCH_INVERT)) {
+            getValue(STEPPER_PITCH_INVERT, StepperPitchInvert);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, AS5600_MODE)) {
+            getValue(AS5600_MODE, As5600Mode);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, AS5600_I2C_ADDR)) {
+            getValue(AS5600_I2C_ADDR, As5600I2CAddr);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, AS5600_MIN_RAW)) {
+            getValue(AS5600_MIN_RAW, As5600MinRaw);
+            if(targeted) {initCommonMessages(name); return;}
+        }
+        if(!name || !strcmp(name, AS5600_MAX_RAW)) {
+            getValue(AS5600_MAX_RAW, As5600MaxRaw);
+            if(targeted) {initCommonMessages(name); return;}
+        }
         if(!name || !strcmp(name, BOOT_BUTTON_COMMAND)) {
             bootButtonCommand[0] = {0};
             getValue(BOOT_BUTTON_COMMAND, bootButtonCommand, BOOT_BUTTON_COMMAND_LEN);
@@ -939,6 +991,19 @@ private:
             {PITCH_LEFT_SERVO_ZERO, "Pitch left servo zero", "The zero calibration for the pitch left servo", SettingType::Number, PITCH_LEFT_SERVO_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
             {PITCH_RIGHT_SERVO_ZERO, "Pitch right servo zero", "The zero calibration for the pitch right servo", SettingType::Number, PITCH_RIGHT_SERVO_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}}
 #endif
+            ,{STEPPER_STROKE_RANGE, "Stroke travel (steps)", "Total travel in steps for the stroke axis (0-9999 maps across this span)", SettingType::Number, STEPPER_STROKE_RANGE_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper}},
+            {STEPPER_ROLL_RANGE, "Roll travel (steps)", "Total travel in steps for the roll axis", SettingType::Number, STEPPER_ROLL_RANGE_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper}},
+            {STEPPER_PITCH_RANGE, "Pitch travel (steps)", "Total travel in steps for the pitch axis", SettingType::Number, STEPPER_PITCH_RANGE_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper}},
+            {STEPPER_STROKE_MAX_HZ, "Stroke max Hz", "Maximum step frequency for stroke axis", SettingType::Number, STEPPER_STROKE_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {STEPPER_ROLL_MAX_HZ, "Roll max Hz", "Maximum step frequency for roll axis", SettingType::Number, STEPPER_ROLL_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {STEPPER_PITCH_MAX_HZ, "Pitch max Hz", "Maximum step frequency for pitch axis", SettingType::Number, STEPPER_PITCH_MAX_HZ_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {STEPPER_STROKE_INVERT, "Stroke dir invert", "Invert stroke stepper direction", SettingType::Boolean, STEPPER_STROKE_INVERT_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {STEPPER_ROLL_INVERT, "Roll dir invert", "Invert roll stepper direction", SettingType::Boolean, STEPPER_ROLL_INVERT_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {STEPPER_PITCH_INVERT, "Pitch dir invert", "Invert pitch stepper direction", SettingType::Boolean, STEPPER_PITCH_INVERT_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {AS5600_MODE, "AS5600 mode", "0=Disabled, 1=I2C, 2=PWM", SettingType::Number, AS5600_MODE_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {AS5600_I2C_ADDR, "AS5600 I2C addr", "I2C address for AS5600", SettingType::Number, AS5600_I2C_ADDR_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {AS5600_MIN_RAW, "AS5600 min raw", "Minimum raw angle value mapped to TCode 0", SettingType::Number, AS5600_MIN_RAW_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
+            {AS5600_MAX_RAW, "AS5600 max raw", "Maximum raw angle value mapped to TCode 9999", SettingType::Number, AS5600_MAX_RAW_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}}
             ,{TWIST_SERVO_ZERO, "Twist servo zero", "The zero calibration for the twist servo", SettingType::Number, TWIST_SERVO_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
             {VALVE_SERVO_ZERO, "Valve servo zero", "The zero calibration for the valve servo", SettingType::Number, VALVE_SERVO_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
             {SQUEEZE_ZERO, "Squeeze servo zero", "The zero calibration for the squeeze servo", SettingType::Number, SQUEEZE_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
@@ -1023,12 +1088,19 @@ private:
             {CASE_FAN_CHANNEL, "Case fan channel", "Timer channel the case fan is on", SettingType::Number, CASE_FAN_CHANNEL_DEFAULT, RestartRequired::YES, {SettingProfile::PWM, SettingProfile::Pin}},
             {HEATER_PIN, "Heater PIN", "Pin the heater is on", SettingType::Number, HEATER_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Temperature, SettingProfile::Pin, SettingProfile::PWM}},
             {HEATER_CHANNEL, "Heater channel", "Timer channel the heater is on", SettingType::Number, HEATER_CHANNEL_DEFAULT, RestartRequired::YES, {SettingProfile::Temperature, SettingProfile::Pin, SettingProfile::PWM}},
+            {STROKE_STEPPER_STEP_PIN, "Stroke step PIN", "Step pin for the stroke stepper", SettingType::Number, STROKE_STEPPER_STEP_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin}},
+            {STROKE_STEPPER_DIR_PIN, "Stroke dir PIN", "Direction pin for the stroke stepper", SettingType::Number, STROKE_STEPPER_DIR_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin}},
+            {ROLL_STEPPER_STEP_PIN, "Roll step PIN", "Step pin for the roll stepper", SettingType::Number, ROLL_STEPPER_STEP_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin}},
+            {ROLL_STEPPER_DIR_PIN, "Roll dir PIN", "Direction pin for the roll stepper", SettingType::Number, ROLL_STEPPER_DIR_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin}},
+            {PITCH_STEPPER_STEP_PIN, "Pitch step PIN", "Step pin for the pitch stepper", SettingType::Number, PITCH_STEPPER_STEP_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin}},
+            {PITCH_STEPPER_DIR_PIN, "Pitch dir PIN", "Direction pin for the pitch stepper", SettingType::Number, PITCH_STEPPER_DIR_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin}},
             // Analog
             {TWIST_FEEDBACK_PIN, "Twist feedback PIN", "The twist feedback pin", SettingType::Number, TWIST_FEEDBACK_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Pin}},
             {LUBE_BUTTON_PIN, "Lube button PIN", "Pin the lube button is on", SettingType::Number, LUBE_BUTTON_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::PWM, SettingProfile::Pin}},
             {INTERNAL_TEMP_PIN, "Internal temp PIN", "Pin the internal temp sensor is on", SettingType::Number, INTERNAL_TEMP_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Analog, SettingProfile::Pin}},
             {DISPLAY_RST_PIN, "Display Rst PIN", "Reset pin for the display", SettingType::Number, DISPLAY_RST_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Display, SettingProfile::Pin}},
             {TEMP_PIN, "Temp pin", "Pin the sleeve temperture is on", SettingType::Number, TEMP_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Pin, SettingProfile::Analog}},
+            {AS5600_PWM_PIN_SETTING, "AS5600 PWM PIN", "PWM output pin from AS5600 (if using PWM mode)", SettingType::Number, AS5600_PWM_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::Stepper, SettingProfile::Pin, SettingProfile::Analog}},
             {I2C_SDA_PIN, "I2C SDA PIN", "Pin of the I2C SDA", SettingType::Number, I2C_SDA_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::System, SettingProfile::Pin}},
             {I2C_SCL_PIN, "I2C SCL PIN", "Pin of the I2C SCL", SettingType::Number, I2C_SCL_PIN_DEFAULT, RestartRequired::YES, {SettingProfile::System, SettingProfile::Pin}},
             {BUTTON_SET_PINS, "Button set pins", "Pins for each button set. (Max 4)", SettingType::ArrayInt, BUTTON_SET_PINS_DEFAULT, RestartRequired::YES, {SettingProfile::Pin, SettingProfile::Analog}},
@@ -1093,6 +1165,19 @@ private:
     int TwistServo_ZERO;
     int ValveServo_ZERO;
     int SqueezeServo_ZERO;
+    int StepperStrokeRange;
+    int StepperRollRange;
+    int StepperPitchRange;
+    int StepperStrokeMaxHz;
+    int StepperRollMaxHz;
+    int StepperPitchMaxHz;
+    bool StepperStrokeInvert;
+    bool StepperRollInvert;
+    bool StepperPitchInvert;
+    int As5600Mode;
+    int As5600I2CAddr;
+    int As5600MinRaw;
+    int As5600MaxRaw;
     char bootButtonCommand[MAX_COMMAND];
     uint16_t buttonAnalogDebounce;
     bool versionDisplayed;
@@ -1569,6 +1654,9 @@ private:
             case DeviceType::SR6:
                 m_currentPinMap = loadSR6Pins();
             break;
+            case DeviceType::OSR_STEPPER:
+                m_currentPinMap = loadOSRStepperPins();
+            break;
             default:
                 m_currentPinMap = loadOSRPins();
 
@@ -1718,6 +1806,32 @@ private:
         pinMap->setPitchLeft(pin);
         getValue(PITCH_LEFT_SERVO_CHANNEL, channel);
         pinMap->setPitchLeftChannel(channel);
+        return pinMap;
+    }
+
+    PinMapOSRStepper* loadOSRStepperPins()
+    {
+        if(!m_pinsFileInfo.initialized) {
+            LogHandler::error(m_TAG, "loadOSRStepperPins called before initialized");
+            return 0;
+        }
+        PinMapOSRStepper* pinMap = PinMapOSRStepper::getInstance();
+        loadCommonPins(pinMap);
+        int8_t pin = -1;
+        getValue(STROKE_STEPPER_STEP_PIN, pin);
+        pinMap->setStrokeStep(pin);
+        getValue(STROKE_STEPPER_DIR_PIN, pin);
+        pinMap->setStrokeDir(pin);
+        getValue(ROLL_STEPPER_STEP_PIN, pin);
+        pinMap->setRollStep(pin);
+        getValue(ROLL_STEPPER_DIR_PIN, pin);
+        pinMap->setRollDir(pin);
+        getValue(PITCH_STEPPER_STEP_PIN, pin);
+        pinMap->setPitchStep(pin);
+        getValue(PITCH_STEPPER_DIR_PIN, pin);
+        pinMap->setPitchDir(pin);
+        getValue(AS5600_PWM_PIN_SETTING, pin);
+        pinMap->setAs5600Pwm(pin);
         return pinMap;
     }
     

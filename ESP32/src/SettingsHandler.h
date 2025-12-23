@@ -454,6 +454,9 @@ public:
         JsonObject SR6 = deviceTypes.add<JsonObject>();
         SR6["name"] = "SR6";
         SR6["value"] = DeviceType::SR6;
+        JsonObject OSRStepper = deviceTypes.add<JsonObject>();
+        OSRStepper["name"] = "OSR Stepper";
+        OSRStepper["value"] = DeviceType::OSR_STEPPER;
         JsonObject TVIBE = deviceTypes.add<JsonObject>();
         TVIBE["name"] = "TVIBE";
         TVIBE["value"] = DeviceType::TVIBE;

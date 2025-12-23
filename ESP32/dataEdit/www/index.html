@@ -412,7 +412,7 @@
 
 						<!--------------------------------------- END BLDC ----------------------------------------------------->
 
-						<div class="tRow sr6Only servoOnly hidden">
+						<div class="tRow sr6Only servoOnly servoDeviceOnly hidden">
 							<div class="tCell" title="The max servo range of your main/pitch servos">
 								<span>Main servos max range (&#8451;)</span> 
 							</div>
@@ -428,7 +428,7 @@
 								<button id="editTimersButton" onclick="ESPTimer.show()">Edit timers</button>
 							</div>
 						</div>
-						<div class="servoTable">
+						<div class="servoTable servoDeviceOnly">
 							<div class="tRow servoHeader">
 								<div class="tCell">
 									<span>Servo</span> 
@@ -569,6 +569,83 @@
 								<div class="tCell">
 									<select id="Squeeze_CHANNEL" name="timerChannels" oninput="onSelectPinChannel(this)"></select>
 								</div>
+							</div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell" colspan="4">
+								<span class="instruction-text">Stepper axes (used when device type is OSR Stepper)</span>
+							</div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Stroke step pin</span></div>
+							<div class="tCell"><input id="StrokeStepperStep_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+							<div class="tCell"><span>Stroke dir pin</span></div>
+							<div class="tCell"><input id="StrokeStepperDir_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Stroke travel (steps)</span></div>
+							<div class="tCell"><input id="StepperStrokeRange" type="number" min="1" max="2147483647" oninput="updateStepperSettings()"></div>
+							<div class="tCell"><span>Stroke max Hz</span></div>
+							<div class="tCell"><input id="StepperStrokeMaxHz" type="number" min="1" max="2147483647" oninput="updateStepperSettings()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Stroke dir invert</span></div>
+							<div class="tCell"><input id="StepperStrokeInvert" type="checkbox" onchange="updateStepperSettings()"></div>
+						</div>
+
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Roll step pin</span></div>
+							<div class="tCell"><input id="RollStepperStep_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+							<div class="tCell"><span>Roll dir pin</span></div>
+							<div class="tCell"><input id="RollStepperDir_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Roll travel (steps)</span></div>
+							<div class="tCell"><input id="StepperRollRange" type="number" min="1" max="2147483647" oninput="updateStepperSettings()"></div>
+							<div class="tCell"><span>Roll max Hz</span></div>
+							<div class="tCell"><input id="StepperRollMaxHz" type="number" min="1" max="2147483647" oninput="updateStepperSettings()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Roll dir invert</span></div>
+							<div class="tCell"><input id="StepperRollInvert" type="checkbox" onchange="updateStepperSettings()"></div>
+						</div>
+
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Pitch step pin</span></div>
+							<div class="tCell"><input id="PitchStepperStep_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+							<div class="tCell"><span>Pitch dir pin</span></div>
+							<div class="tCell"><input id="PitchStepperDir_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Pitch travel (steps)</span></div>
+							<div class="tCell"><input id="StepperPitchRange" type="number" min="1" max="2147483647" oninput="updateStepperSettings()"></div>
+							<div class="tCell"><span>Pitch max Hz</span></div>
+							<div class="tCell"><input id="StepperPitchMaxHz" type="number" min="1" max="2147483647" oninput="updateStepperSettings()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>Pitch dir invert</span></div>
+							<div class="tCell"><input id="StepperPitchInvert" type="checkbox" onchange="updateStepperSettings()"></div>
+						</div>
+
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>AS5600 mode</span></div>
+							<div class="tCell">
+								<select id="AS5600_Mode" onchange="updateStepperSettings()">
+									<option value="0">Disabled</option>
+									<option value="1">I2C</option>
+									<option value="2">PWM</option>
+								</select>
+							</div>
+							<div class="tCell"><span>AS5600 PWM pin</span></div>
+							<div class="tCell"><input id="AS5600_PWM_PIN" type="number" min="-1" max="2147483647" oninput="updateStepperPins()"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>AS5600 I2C addr</span></div>
+							<div class="tCell"><input id="AS5600_I2C_Addr" type="number" min="0" max="255" oninput="updateStepperSettings()"></div>
+							<div class="tCell"><span>AS5600 raw min/max</span></div>
+							<div class="tCell">
+								<input id="AS5600_MinRaw" type="number" min="0" max="4095" style="width:45%" oninput="updateStepperSettings()"> / 
+								<input id="AS5600_MaxRaw" type="number" min="0" max="4095" style="width:45%" oninput="updateStepperSettings()">
 							</div>
 						</div>
 						<div class="tRow feedbackTwistOnly">

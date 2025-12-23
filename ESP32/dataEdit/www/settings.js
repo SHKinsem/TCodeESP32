@@ -83,7 +83,8 @@ let BoardType = {
 let DeviceType = {
     OSR: 0,
     SR6: 1,
-    SSR1: 2
+    SSR1: 2,
+    OSR_STEPPER: 4
 };
 let BLEDeviceType = {
     TCODE: 0,
@@ -671,6 +672,9 @@ function isSR6() {
 function isOSR() {
     return userSettings["deviceType"] == DeviceType.OSR;
 }
+function isOSRStepper() {
+    return userSettings["deviceType"] == DeviceType.OSR_STEPPER;
+}
 function isSSR1() {
     return userSettings["deviceType"] == DeviceType.SSR1;
 }
@@ -845,6 +849,18 @@ function setWifiSettings() {
     document.getElementById("apModeGateway").value = wifiSettings["apModeGateway"];
 }
 function setPinoutSettings() {
+    const stepperStrokeStep = document.getElementById("StrokeStepperStep_PIN");
+    if(stepperStrokeStep) {
+        stepperStrokeStep.value = pinoutSettings["StrokeStepperStep_PIN"];
+        document.getElementById("StrokeStepperDir_PIN").value = pinoutSettings["StrokeStepperDir_PIN"];
+        document.getElementById("RollStepperStep_PIN").value = pinoutSettings["RollStepperStep_PIN"];
+        document.getElementById("RollStepperDir_PIN").value = pinoutSettings["RollStepperDir_PIN"];
+        document.getElementById("PitchStepperStep_PIN").value = pinoutSettings["PitchStepperStep_PIN"];
+        document.getElementById("PitchStepperDir_PIN").value = pinoutSettings["PitchStepperDir_PIN"];
+        const as5600Pwm = document.getElementById("AS5600_PWM_PIN");
+        if(as5600Pwm)
+            as5600Pwm.value = pinoutSettings["AS5600_PWM_PIN"];
+    }
     if(systemInfo.motorType === MotorType.BLDC) {
         BLDCMotor.setupPins();
     } else {
@@ -945,6 +961,8 @@ function setUserSettings()
         BLDCMotor.setup();
 
 	Buttons.setup();
+
+    setStepperSettingsUI();
     
     document.getElementById("RightServo_ZERO").value = userSettings["RightServo_ZERO"];
     document.getElementById("LeftServo_ZERO").value = userSettings["LeftServo_ZERO"];
@@ -1809,6 +1827,10 @@ function updatePins()
         updateBLDCPins();
         return;
     }
+    if(isOSRStepper()) {
+        updateStepperPins();
+        return;
+    }
     if(upDateTimeout !== null) 
     {
         clearTimeout(upDateTimeout);
@@ -1988,6 +2010,8 @@ function validatePin(pin, pinName, assignedPins, duplicatePins, isInput, invalid
         }
         if(isInput === true && inputOnlypins.indexOf(pin) == -1 && validPWMpins.indexOf(pin) == -1) {
             invalidPins.push(pinName+" pin: "+pin);
+        } else if(invalidPins && isInput !== true && inputOnlypins.indexOf(pin) > -1) {
+            invalidPins.push(pinName+" pin: "+pin+" is input only");
         }
         assignedPins.push({name:pinName, pin:pin});
     }
@@ -2006,6 +2030,9 @@ function validatePWMPin(pin, pinName, assignedPins, duplicatePins, pwmErrors) {
 function validatePins() {
     if(systemInfo.motorType == MotorType.BLDC) {
         return validateBLDCPins();
+    }
+    if(isOSRStepper()) {
+        return validateStepperPins();
     }
     clearErrors("pinValidation"); 
     var assignedPins = [];
@@ -2029,6 +2056,51 @@ function validatePins() {
     validateCommonPWMPins(assignedPins, duplicatePins, pinValues, pwmErrors);
 
     var invalidPins = [];
+    validateNonPWMPins(assignedPins, duplicatePins, invalidPins, pinValues);
+
+    if (duplicatePins.length || pwmErrors.length || invalidPins.length) {
+        var errorString = "<div name='pinValidation'>Pins NOT saved due to invalid input.<br>";
+        if(duplicatePins.length )
+            errorString += "<div style='margin-left: 25px;'>The following pins are duplicated:<br><div style='color: white; margin-left: 25px;'>"+duplicatePins.join("<br>")+"</div></div>";
+        if(invalidPins.length) {
+            if(duplicatePins.length)
+                errorString += "<br>";
+            errorString += "<div style='margin-left: 25px;'>The following pins are invalid:<br><div style='color: white; margin-left: 25px;'>"+invalidPins.join("<br>")+"</div></div>";
+        }
+        if (pwmErrors.length) {
+            if(duplicatePins.length || invalidPins.length) {
+                errorString += "<br>";
+            } 
+            errorString += "<div style='margin-left: 25px;'>The following pins are invalid PWM pins:<br><div style='color: white; margin-left: 25px;'>"+pwmErrors.join("<br>")+"</div></div>";
+        }
+        
+        errorString += "</div>";
+        showError(errorString);
+        return undefined;
+    }
+    return pinValues;
+}
+
+function validateStepperPins() {
+    clearErrors("pinValidation"); 
+    var assignedPins = [];
+    var duplicatePins = [];
+    var pwmErrors = [];
+    var invalidPins = [];
+    var pinValues = getStepperPinValues();
+    if(userSettings["disablePinValidation"]) {
+        return pinValues;
+    }
+
+    validatePin(pinValues.strokeStep, "Stroke stepper step", assignedPins, duplicatePins, false, invalidPins);
+    validatePin(pinValues.strokeDir, "Stroke stepper dir", assignedPins, duplicatePins, false, invalidPins);
+    validatePin(pinValues.rollStep, "Roll stepper step", assignedPins, duplicatePins, false, invalidPins);
+    validatePin(pinValues.rollDir, "Roll stepper dir", assignedPins, duplicatePins, false, invalidPins);
+    validatePin(pinValues.pitchStep, "Pitch stepper step", assignedPins, duplicatePins, false, invalidPins);
+    validatePin(pinValues.pitchDir, "Pitch stepper dir", assignedPins, duplicatePins, false, invalidPins);
+    validatePin(pinValues.as5600Pwm, "AS5600 PWM", assignedPins, duplicatePins, true, invalidPins);
+
+    validateCommonPWMPins(assignedPins, duplicatePins, pinValues, pwmErrors);
     validateNonPWMPins(assignedPins, duplicatePins, invalidPins, pinValues);
 
     if (duplicatePins.length || pwmErrors.length || invalidPins.length) {
@@ -2177,6 +2249,92 @@ function getCommonPinValues(pinValues) {
     pinValues.buttonSets = [];
     buttonSetPins.forEach((node, index) => {
         pinValues.buttonSets[index] = parseInt(document.getElementById('buttonSetPin'+index).value);;
+    });
+}
+
+function getStepperPinValues() {
+    var pinValues = {};
+    pinValues.strokeStep = parseInt(document.getElementById('StrokeStepperStep_PIN').value);
+    pinValues.strokeDir = parseInt(document.getElementById('StrokeStepperDir_PIN').value);
+    pinValues.rollStep = parseInt(document.getElementById('RollStepperStep_PIN').value);
+    pinValues.rollDir = parseInt(document.getElementById('RollStepperDir_PIN').value);
+    pinValues.pitchStep = parseInt(document.getElementById('PitchStepperStep_PIN').value);
+    pinValues.pitchDir = parseInt(document.getElementById('PitchStepperDir_PIN').value);
+    pinValues.as5600Pwm = parseInt(document.getElementById('AS5600_PWM_PIN').value);
+    getCommonPinValues(pinValues);
+    return pinValues;
+}
+
+function updateStepperPins() {
+    if(upDateTimeout !== null) 
+    {
+        clearTimeout(upDateTimeout);
+    }
+    upDateTimeout = setTimeout(() => 
+    {
+        var pinValues = validateStepperPins();
+        if(pinValues) {
+            pinoutSettings["StrokeStepperStep_PIN"] = pinValues.strokeStep;
+            pinoutSettings["StrokeStepperDir_PIN"] = pinValues.strokeDir;
+            pinoutSettings["RollStepperStep_PIN"] = pinValues.rollStep;
+            pinoutSettings["RollStepperDir_PIN"] = pinValues.rollDir;
+            pinoutSettings["PitchStepperStep_PIN"] = pinValues.pitchStep;
+            pinoutSettings["PitchStepperDir_PIN"] = pinValues.pitchDir;
+            pinoutSettings["AS5600_PWM_PIN"] = pinValues.as5600Pwm;
+            updateCommonPins(pinValues);
+            setRestartRequired();
+            postPinoutSettings(0);
+        }
+    }, defaultDebounce);
+}
+
+function setStepperSettingsUI() {
+    const stepper = isOSRStepper();
+    Utils.toggleControlVisibilityByClassName('stepperOnly', stepper);
+    Utils.toggleControlVisibilityByClassName('servoOnly', !stepper);
+    Utils.toggleControlVisibilityByClassName('servoDeviceOnly', !stepper);
+    if(!stepper) {
+        return;
+    }
+    const strokeRange = document.getElementById('StepperStrokeRange');
+    if(!strokeRange) {
+        return;
+    }
+    strokeRange.value = userSettings["StepperStrokeRange"];
+    document.getElementById('StepperRollRange').value = userSettings["StepperRollRange"];
+    document.getElementById('StepperPitchRange').value = userSettings["StepperPitchRange"];
+    document.getElementById('StepperStrokeMaxHz').value = userSettings["StepperStrokeMaxHz"];
+    document.getElementById('StepperRollMaxHz').value = userSettings["StepperRollMaxHz"];
+    document.getElementById('StepperPitchMaxHz').value = userSettings["StepperPitchMaxHz"];
+    document.getElementById('StepperStrokeInvert').checked = userSettings["StepperStrokeInvert"];
+    document.getElementById('StepperRollInvert').checked = userSettings["StepperRollInvert"];
+    document.getElementById('StepperPitchInvert').checked = userSettings["StepperPitchInvert"];
+    document.getElementById('AS5600_Mode').value = userSettings["AS5600_Mode"];
+    document.getElementById('AS5600_I2C_Addr').value = userSettings["AS5600_I2C_Addr"];
+    document.getElementById('AS5600_MinRaw').value = userSettings["AS5600_MinRaw"];
+    document.getElementById('AS5600_MaxRaw').value = userSettings["AS5600_MaxRaw"];
+}
+
+function updateStepperSettings() {
+    if(!isOSRStepper()) {
+        return;
+    }
+    debounceInput("stepperSettings", () => {
+        validateIntControl('StepperStrokeRange', userSettings, 'StepperStrokeRange');
+        validateIntControl('StepperRollRange', userSettings, 'StepperRollRange');
+        validateIntControl('StepperPitchRange', userSettings, 'StepperPitchRange');
+        validateIntControl('StepperStrokeMaxHz', userSettings, 'StepperStrokeMaxHz');
+        validateIntControl('StepperRollMaxHz', userSettings, 'StepperRollMaxHz');
+        validateIntControl('StepperPitchMaxHz', userSettings, 'StepperPitchMaxHz');
+        userSettings["StepperStrokeInvert"] = document.getElementById('StepperStrokeInvert').checked;
+        userSettings["StepperRollInvert"] = document.getElementById('StepperRollInvert').checked;
+        userSettings["StepperPitchInvert"] = document.getElementById('StepperPitchInvert').checked;
+        userSettings["AS5600_Mode"] = parseInt(document.getElementById('AS5600_Mode').value);
+        userSettings["AS5600_I2C_Addr"] = parseInt(document.getElementById('AS5600_I2C_Addr').value);
+        userSettings["AS5600_MinRaw"] = parseInt(document.getElementById('AS5600_MinRaw').value);
+        userSettings["AS5600_MaxRaw"] = parseInt(document.getElementById('AS5600_MaxRaw').value);
+        setRestartRequired();
+        updateUserSettings(0);
     });
 }
 
@@ -2532,12 +2690,21 @@ function toggleStaticIPSettings(isStatic)
 }
 function toggleDeviceOptions(deviceType)
 {
+    const isStepper = deviceType == DeviceType.OSR_STEPPER;
+    const isSR6Device = deviceType == DeviceType.SR6;
+    const isOSRDevice = deviceType == DeviceType.OSR || isStepper;
     var osrOnly = document.getElementsByClassName('osrOnly');
     var sr6Only = document.getElementsByClassName('sr6Only');
     for(var i=0;i < sr6Only.length; i++)
-        sr6Only[i].style.display = deviceType == DeviceType.SR6 && deviceType != DeviceType.SSR1 ? "flex" : "none";
+        sr6Only[i].style.display = isSR6Device && deviceType != DeviceType.SSR1 ? "flex" : "none";
     for(var i=0;i < osrOnly.length; i++)
-        osrOnly[i].style.display = deviceType == DeviceType.OSR && deviceType != DeviceType.SSR1 ? "flex" : "none";
+        osrOnly[i].style.display = isOSRDevice && deviceType != DeviceType.SSR1 ? "flex" : "none";
+
+    Utils.toggleControlVisibilityByClassName('stepperOnly', isStepper);
+    Utils.toggleControlVisibilityByClassName('servoOnly', !isStepper);
+    Utils.toggleControlVisibilityByClassName('servoDeviceOnly', !isStepper);
+    if(isStepper)
+        setStepperSettingsUI();
 }
 
 function toggleNonTCodev3Options()

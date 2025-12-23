@@ -319,6 +319,14 @@ button:disabled {
 .formTable select {
   border-radius: 5px;
 }
+.formTable input:not([type=checkbox]):not([type=range]),
+.formTable input[type=number],
+.formTable input[type=password],
+.formTable select:not([multiple]) {
+  height: 22px;
+  padding: 2px 5px;
+  font-size: 0.9rem;
+}
 .formTable input:not([type=checkbox]),
 .formTable textarea,
 .formTable input[type=number],

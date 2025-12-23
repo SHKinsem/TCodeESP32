@@ -422,6 +422,47 @@ private:
     }
 };
 
+class PinMapOSRStepper : public PinMap {
+public:
+    static PinMapOSRStepper* getInstance()
+    {
+        static PinMapOSRStepper instance(DeviceType::OSR_STEPPER, BoardType::DEVKIT);
+        return &instance;
+    }
+
+    int8_t strokeStep() const { return m_strokeStep; }
+    void setStrokeStep(const int8_t &pin) { m_strokeStep = pin; }
+    int8_t strokeDir() const { return m_strokeDir; }
+    void setStrokeDir(const int8_t &pin) { m_strokeDir = pin; }
+
+    int8_t rollStep() const { return m_rollStep; }
+    void setRollStep(const int8_t &pin) { m_rollStep = pin; }
+    int8_t rollDir() const { return m_rollDir; }
+    void setRollDir(const int8_t &pin) { m_rollDir = pin; }
+
+    int8_t pitchStep() const { return m_pitchStep; }
+    void setPitchStep(const int8_t &pin) { m_pitchStep = pin; }
+    int8_t pitchDir() const { return m_pitchDir; }
+    void setPitchDir(const int8_t &pin) { m_pitchDir = pin; }
+
+    int8_t as5600Pwm() const { return m_as5600Pwm; }
+    void setAs5600Pwm(const int8_t &pin) { m_as5600Pwm = pin; }
+
+protected:
+    PinMapOSRStepper(DeviceType deviceType, BoardType boardType) : PinMap(deviceType, boardType) {}
+
+private:
+    int8_t m_strokeStep = STROKE_STEPPER_STEP_PIN_DEFAULT;
+    int8_t m_strokeDir = STROKE_STEPPER_DIR_PIN_DEFAULT;
+    int8_t m_rollStep = ROLL_STEPPER_STEP_PIN_DEFAULT;
+    int8_t m_rollDir = ROLL_STEPPER_DIR_PIN_DEFAULT;
+    int8_t m_pitchStep = PITCH_STEPPER_STEP_PIN_DEFAULT;
+    int8_t m_pitchDir = PITCH_STEPPER_DIR_PIN_DEFAULT;
+    int8_t m_as5600Pwm = AS5600_PWM_PIN_DEFAULT;
+
+    void overideDefaults() override {}
+};
+
     // #define LowerLeftServo_PWM 0     // Lower Left Servo
     // #define UpperLeftServo_PWM 1     // Upper Left Servo
 

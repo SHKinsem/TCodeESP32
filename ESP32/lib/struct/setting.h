@@ -50,6 +50,7 @@ enum class SettingProfile
     Temperature,
     Display,
     Servo,
+    Stepper,
     Pin,
     Timer,
     Bldc,

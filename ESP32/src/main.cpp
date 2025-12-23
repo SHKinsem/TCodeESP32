@@ -68,6 +68,7 @@ SOFTWARE. */
 #if MOTOR_TYPE == 0
 #include "ServoHandler0_3.h"
 #include "ServoHandler0_4.h"
+#include "StepperHandler0_3.h"
 #elif MOTOR_TYPE == 1
 #include "BLDCHandler0_3.h"
 #include "BLDCHandler0_4.h"
@@ -804,7 +805,14 @@ void setup()
 #if MOTOR_TYPE == 0
 	if (settingsFactory->getTcodeVersion() == TCodeVersion::v0_3)
 	{
-		motorHandler = new ServoHandler0_3();
+		if (deviceType == DeviceType::OSR_STEPPER)
+		{
+			motorHandler = new StepperHandler0_3();
+		}
+		else
+		{
+			motorHandler = new ServoHandler0_3();
+		}
 	}
 	else if (settingsFactory->getTcodeVersion() == TCodeVersion::v0_4)
 	{

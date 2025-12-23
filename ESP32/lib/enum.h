@@ -67,17 +67,18 @@ enum class MotorType: int
 
 enum class DeviceType: int
 {
-    OSR,
-    SR6,
-    SSR1,
-    TVIBE,
+    OSR = 0,
+    SR6 = 1,
+    SSR1 = 2,
+    TVIBE = 3,
+    OSR_STEPPER = 4,
     MAX
 };
 
 #if MOTOR_TYPE == 1
 #define DEVICE_TYPES_HELP "Sets the system device type and resets the pinout\nValid values are: SSR1=2"
 #else
-#define DEVICE_TYPES_HELP "Sets the system device type and resets the pinout\nValid values are: OSR=0, SR6=1, TVIBE=3"
+#define DEVICE_TYPES_HELP "Sets the system device type and resets the pinout\nValid values are: OSR=0, SR6=1, TVIBE=3, OSR_STEPPER=4"
 #endif
 
 enum class BLDCEncoderType: int {
