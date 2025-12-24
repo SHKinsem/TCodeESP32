@@ -23,6 +23,7 @@ SOFTWARE. */
 #pragma once
 
 #include <Wire.h>
+#include <AS5600.h>
 #include <driver/gpio.h>
 #include <FastAccelStepper.h>
 #include <algorithm>
@@ -46,6 +47,7 @@ public:
     {
         LogHandler::debug(_TAG, "Setting up stepper handler v3");
         m_settingsFactory = SettingsFactory::getInstance();
+        s_instance = this;
 
         DeviceType deviceType = DeviceType::OSR;
         m_settingsFactory->getValue(DEVICE_TYPE, deviceType);
@@ -83,10 +85,26 @@ public:
         m_settingsFactory->getValue(AS5600_I2C_ADDR, m_as5600I2CAddr);
         m_settingsFactory->getValue(AS5600_MIN_RAW, m_as5600MinRaw);
         m_settingsFactory->getValue(AS5600_MAX_RAW, m_as5600MaxRaw);
+        m_settingsFactory->getValue(AS5600_OFFSET_STEPS, m_as5600OffsetSteps);
+        s_lastOffsetSteps = m_as5600OffsetSteps;
+        if (m_as5600Mode == 1 && m_as5600I2CAddr != AS5600_DEFAULT_ADDRESS)
+        {
+            LogHandler::warning(_TAG, "AS5600 custom I2C address unsupported; using 0x36");
+            m_as5600I2CAddr = AS5600_DEFAULT_ADDRESS;
+        }
         m_as5600PwmPin = m_pinMap->as5600Pwm();
         if (m_as5600Mode == 1)
         {
             Wire.begin(m_pinMap->i2cSda(), m_pinMap->i2cScl());
+            Wire.setClock(100000); // be conservative to reduce boot errors
+            m_as5600FailCount = 0;
+            m_as5600BackoffUntilMs = 0;
+            m_as5600Ok = m_as5600.begin();
+            if (!m_as5600Ok)
+            {
+                LogHandler::warning(_TAG, "AS5600 not detected at boot; disabling encoder");
+                m_as5600Mode = 0;
+            }
         }
         else if (m_as5600Mode == 2 && m_as5600PwmPin >= 0)
         {
@@ -122,6 +140,58 @@ public:
 
     void read(byte input) override { m_tcode->read(input); }
 
+    static bool getStrokeSensorSnapshot(int &raw, long &steps, long &filtered, long &offset)
+    {
+        if (!s_instance)
+        {
+            return false;
+        }
+        raw = s_lastSensorRaw;
+        steps = s_lastSensorSteps;
+        filtered = s_lastFilteredSteps;
+        offset = s_lastOffsetSteps;
+        return true;
+    }
+
+    static bool zeroStrokeFromSensor()
+    {
+        if (!s_instance)
+        {
+            return false;
+        }
+        return s_instance->zeroStrokeFromSensorInternal();
+    }
+
+private:
+    bool zeroStrokeFromSensorInternal()
+    {
+        if (m_as5600Mode == 0)
+        {
+            return false;
+        }
+        const int raw = readAS5600();
+        if (raw < 0)
+        {
+            return false;
+        }
+        const long mapped = mapLong(raw, m_as5600MinRaw, m_as5600MaxRaw, -m_strokeAxis.rangeHalf, m_strokeAxis.rangeHalf);
+        m_as5600OffsetSteps = mapped;
+        s_lastOffsetSteps = m_as5600OffsetSteps;
+        m_settingsFactory->setValue(AS5600_OFFSET_STEPS, static_cast<int>(m_as5600OffsetSteps));
+        m_settingsFactory->saveCommon();
+
+        m_filteredSensorSteps = 0;
+        m_hasSensor = false;
+        s_lastSensorRaw = raw;
+        s_lastSensorSteps = 0;
+        s_lastFilteredSteps = 0;
+        if (m_strokeAxis.stepper)
+        {
+            m_strokeAxis.stepper->setCurrentPosition(0);
+        }
+        return true;
+    }
+
     void execute() override
     {
         if (m_initFailed)
@@ -133,6 +203,8 @@ public:
         if (nowMs - m_lastConfigRefreshMs >= kConfigRefreshMs)
         {
             refreshAxisConfigs();
+            m_settingsFactory->getValue(AS5600_OFFSET_STEPS, m_as5600OffsetSteps);
+            s_lastOffsetSteps = m_as5600OffsetSteps;
             m_lastConfigRefreshMs = nowMs;
         }
 
@@ -147,7 +219,16 @@ public:
         int strokeSensor = -1;
         if (m_as5600Mode != 0)
         {
-            strokeSensor = readAS5600();
+            if (nowMs - m_as5600LastPollMs >= kSensorPollIntervalMs)
+            {
+                strokeSensor = readAS5600();
+                m_as5600LastPollMs = nowMs;
+                m_as5600LastRaw = strokeSensor;
+            }
+            else
+            {
+                strokeSensor = m_as5600LastRaw;
+            }
         }
 
         updateAxis(m_strokeAxis, strokeTarget, strokeSensor);
@@ -177,6 +258,10 @@ private:
     static constexpr int kDefaultAccel = 20000;   // steps/s^2
     static constexpr int kMinAccel = 100;         // prevent zero/negative accel
     static constexpr int kMaxAccel = 500000;      // reasonable upper bound
+    static constexpr int kSensorDeadbandSteps = 3;      // ignore tiny noise
+    static constexpr int kSensorMaxStepJump = 200;      // limit sudden jumps per refresh
+    static constexpr float kSensorAlpha = 0.2f;         // low-pass factor for sensor smoothing
+    static constexpr uint32_t kSensorPollIntervalMs = 25; // throttle AS5600 reads
 
     const char * _TAG = TagHandler::MotorHandler;
     SettingsFactory *m_settingsFactory = nullptr;
@@ -194,6 +279,21 @@ private:
     int m_as5600MinRaw = AS5600_MIN_RAW_DEFAULT;
     int m_as5600MaxRaw = AS5600_MAX_RAW_DEFAULT;
     int8_t m_as5600PwmPin = -1;
+    AS5600 m_as5600;
+    bool m_as5600Ok = false;
+    long m_as5600OffsetSteps = 0;
+    long m_filteredSensorSteps = 0;
+    bool m_hasSensor = false;
+    int m_as5600FailCount = 0;
+    uint32_t m_as5600BackoffUntilMs = 0;
+    uint32_t m_as5600LastPollMs = 0;
+    int m_as5600LastRaw = -1;
+
+    inline static StepperHandler0_3 *s_instance = nullptr;
+    inline static volatile int s_lastSensorRaw = -1;
+    inline static volatile long s_lastSensorSteps = 0;
+    inline static volatile long s_lastFilteredSteps = 0;
+    inline static volatile long s_lastOffsetSteps = 0;
 
     long mapLong(long x, long inMin, long inMax, long outMin, long outMax)
     {
@@ -320,13 +420,34 @@ private:
 
         if (sensorValue >= 0 && axis.rangeHalf > 0)
         {
-            const long sensed = mapLong(sensorValue, m_as5600MinRaw, m_as5600MaxRaw, -axis.rangeHalf, axis.rangeHalf);
-            const long currentPos = axis.stepper->getCurrentPosition();
-            // Ignore wildly out-of-range feedback to prevent direction flips
-            if (std::abs(sensed - currentPos) <= axis.rangeHalf)
+            long sensed = mapLong(sensorValue, m_as5600MinRaw, m_as5600MaxRaw, -axis.rangeHalf, axis.rangeHalf) - m_as5600OffsetSteps;
+            sensed = std::max(-axis.rangeHalf, std::min(axis.rangeHalf, sensed));
+
+            s_lastSensorRaw = sensorValue;
+            s_lastSensorSteps = sensed;
+
+            if (!m_hasSensor)
             {
-                axis.stepper->setCurrentPosition(sensed);
+                m_filteredSensorSteps = sensed;
+                m_hasSensor = true;
             }
+            else
+            {
+                long delta = sensed - m_filteredSensorSteps;
+                if (std::abs(delta) < kSensorDeadbandSteps)
+                {
+                    delta = 0;
+                }
+                else
+                {
+                    if (delta > kSensorMaxStepJump) delta = kSensorMaxStepJump;
+                    if (delta < -kSensorMaxStepJump) delta = -kSensorMaxStepJump;
+                    m_filteredSensorSteps += static_cast<long>(delta * kSensorAlpha);
+                }
+            }
+
+            axis.stepper->setCurrentPosition(m_filteredSensorSteps);
+            s_lastFilteredSteps = m_filteredSensorSteps;
         }
 
         if (target != axis.lastTarget)
@@ -351,19 +472,43 @@ private:
 
     int readAS5600I2C()
     {
-        Wire.beginTransmission(m_as5600I2CAddr);
-        Wire.write(0x0E); // angle high byte
-        if (Wire.endTransmission(false) != 0)
+        const uint32_t now = millis();
+        if (m_as5600BackoffUntilMs && now < m_as5600BackoffUntilMs)
         {
             return -1;
         }
-        if (Wire.requestFrom(m_as5600I2CAddr, 2) != 2)
+        if (!m_as5600Ok)
         {
             return -1;
         }
-        const uint8_t high = Wire.read();
-        const uint8_t low = Wire.read();
-        return ((high & 0x0F) << 8) | low;
+
+        const uint16_t angle = m_as5600.rawAngle();
+        const int err = m_as5600.lastError();
+        if (err != AS5600_OK)
+        {
+            handleAS5600Failure();
+            return -1;
+        }
+
+        m_as5600FailCount = 0;
+        m_as5600BackoffUntilMs = 0;
+        return static_cast<int>(angle & 0x0FFF);
+    }
+
+    void handleAS5600Failure()
+    {
+        m_as5600FailCount++;
+        if (m_as5600FailCount >= 2)
+        {
+            LogHandler::warning(_TAG, "AS5600 disabled after repeated I2C errors");
+            m_as5600Mode = 0;
+            return;
+        }
+        if (m_as5600FailCount % 5 == 0)
+        {
+            m_as5600BackoffUntilMs = millis() + 1000;
+            LogHandler::warning(_TAG, "AS5600 I2C error, backing off");
+        }
     }
 
     int readAS5600Pwm()

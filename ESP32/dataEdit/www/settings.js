@@ -36,6 +36,7 @@ var debugEnabled = true;
 var playSounds = false;
 var importSettingsInputElement;
 var websocket;
+var as5600TelemetryTimeout = null;
 const EndPointType = {
     System: { uri: "/systemInfo"},
     Common: {uri: "/settings"},
@@ -2316,6 +2317,8 @@ function setStepperSettingsUI() {
     document.getElementById('AS5600_I2C_Addr').value = userSettings["AS5600_I2C_Addr"];
     document.getElementById('AS5600_MinRaw').value = userSettings["AS5600_MinRaw"];
     document.getElementById('AS5600_MaxRaw').value = userSettings["AS5600_MaxRaw"];
+
+    startAS5600Telemetry();
 }
 
 function updateStepperSettings() {
@@ -2339,9 +2342,82 @@ function updateStepperSettings() {
         userSettings["AS5600_I2C_Addr"] = parseInt(document.getElementById('AS5600_I2C_Addr').value);
         userSettings["AS5600_MinRaw"] = parseInt(document.getElementById('AS5600_MinRaw').value);
         userSettings["AS5600_MaxRaw"] = parseInt(document.getElementById('AS5600_MaxRaw').value);
+        startAS5600Telemetry();
         setRestartRequired();
         updateUserSettings(0);
     });
+}
+
+function clearAS5600TelemetryTimer() {
+    if(as5600TelemetryTimeout) {
+        clearTimeout(as5600TelemetryTimeout);
+        as5600TelemetryTimeout = null;
+    }
+}
+
+function resetAS5600TelemetryUI() {
+    const ids = ["AS5600_raw", "AS5600_steps", "AS5600_filtered"];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if(el) {
+            el.innerText = "-";
+        }
+    });
+}
+
+function updateAS5600TelemetryUI(data) {
+    const raw = document.getElementById('AS5600_raw');
+    const steps = document.getElementById('AS5600_steps');
+    const filtered = document.getElementById('AS5600_filtered');
+    if(raw && data.raw !== undefined) raw.innerText = data.raw;
+    if(steps && data.steps !== undefined) steps.innerText = data.steps;
+    if(filtered && data.filtered !== undefined) filtered.innerText = data.filtered;
+}
+
+function fetchAS5600Telemetry() {
+    if(!isOSRStepper() || userSettings["AS5600_Mode"] === 0) {
+        resetAS5600TelemetryUI();
+        clearAS5600TelemetryTimer();
+        return;
+    }
+    get("as5600 telemetry", "/as5600", function(xhr) {
+        if(xhr && xhr.response) {
+            updateAS5600TelemetryUI(xhr.response);
+        }
+        as5600TelemetryTimeout = setTimeout(fetchAS5600Telemetry, 750);
+    }, function() {
+        as5600TelemetryTimeout = setTimeout(fetchAS5600Telemetry, 1500);
+    });
+}
+
+function startAS5600Telemetry() {
+    clearAS5600TelemetryTimer();
+    if(isOSRStepper() && userSettings["AS5600_Mode"] !== 0) {
+        fetchAS5600Telemetry();
+    } else {
+        resetAS5600TelemetryUI();
+    }
+}
+
+function zeroAS5600() {
+    if(!isOSRStepper()) {
+        return;
+    }
+    showInfo("Zeroing AS5600...");
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/as5600/zero", true);
+    xhr.onreadystatechange = function() {
+        if(xhr.readyState === 4) {
+            hideInfo();
+            if(xhr.status === 200) {
+                showInfoSuccess("Stroke zero updated from encoder");
+                fetchAS5600Telemetry();
+            } else {
+                showError("Failed to zero AS5600: " + xhr.statusText);
+            }
+        }
+    };
+    xhr.send();
 }
 
 function updateZeros() 

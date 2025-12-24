@@ -26,6 +26,7 @@ SOFTWARE. */
 #include <Adafruit_GFX.h>
 #include "Adafruit_SSD1306_RSB.h"
 #include "SettingsHandler.h"
+#include <algorithm>
 // #include "LogHandler.h"
 #if WIFI_TCODE
 #include "WifiHandler.h"
@@ -63,6 +64,12 @@ public:
         if(SettingsHandler::systemI2CAddresses.size() == 0) {
             return;
         }
+
+		if (std::find(SettingsHandler::systemI2CAddresses.begin(), SettingsHandler::systemI2CAddresses.end(), I2CAddress) == SettingsHandler::systemI2CAddresses.end())
+		{
+			LogHandler::warning(_TAG, "Display I2C address 0x%02X not detected; skipping display setup", I2CAddress);
+			return;
+		}
 
 		//Wire.begin();
 		//Wire.setClock(100000UL);

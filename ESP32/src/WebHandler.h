@@ -36,6 +36,7 @@ SOFTWARE. */
 #include "WebSocketHandler.h"
 #include "TagHandler.h"
 #include "SystemCommandHandler.h"
+#include "TCode/v0.3/StepperHandler0_3.h"
 #if !CONFIG_HTTPD_WS_SUPPORT
 #error This example cannot be used unless HTTPD_WS_SUPPORT is enabled in esp-http-server component configuration
 #endif
@@ -92,6 +93,32 @@ class WebHandler : public HTTPBase {
                 AsyncWebServerResponse *response = request->beginResponse(200, "application/json", systemInfo.c_str());
                 request->send(response);
             }); 
+
+            server->on("/as5600", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+                int raw = -1;
+                long steps = 0;
+                long filtered = 0;
+                long offset = 0;
+                const bool available = StepperHandler0_3::getStrokeSensorSnapshot(raw, steps, filtered, offset);
+                JsonDocument doc;
+                doc["available"] = available;
+                doc["raw"] = raw;
+                doc["steps"] = steps;
+                doc["filtered"] = filtered;
+                doc["offset"] = offset;
+                String out;
+                serializeJson(doc, out);
+                AsyncWebServerResponse *response = request->beginResponse(200, "application/json", out);
+                request->send(response);
+            });
+
+            server->on("/as5600/zero", HTTP_POST, [](AsyncWebServerRequest *request)
+            {
+                const bool ok = StepperHandler0_3::zeroStrokeFromSensor();
+                AsyncWebServerResponse *response = request->beginResponse(ok ? 200 : 500, "application/json", ok ? "{\"msg\":\"ok\"}" : "{\"msg\":\"failed\"}");
+                request->send(response);
+            });
 
             server->on("/motionProfiles", HTTP_GET, [this](AsyncWebServerRequest *request) 
             {

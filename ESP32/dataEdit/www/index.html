@@ -666,6 +666,15 @@
 								<input id="AS5600_MaxRaw" type="number" min="0" max="4095" style="width:45%" oninput="updateStepperSettings()">
 							</div>
 						</div>
+						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>AS5600 encoder</span></div>
+							<div class="tCell">
+								<span>Raw: </span><span id="AS5600_raw">-</span>
+								<span style="margin-left:10px;">Steps: </span><span id="AS5600_steps">-</span>
+								<span style="margin-left:10px;">Filtered: </span><span id="AS5600_filtered">-</span>
+							</div>
+							<div class="tCell"><button onclick="zeroAS5600()">Set stroke zero</button></div>
+						</div>
 						<div class="tRow feedbackTwistOnly">
 							<div class="tCell">
 								<span>Twist feedback</span> 
