@@ -667,11 +667,19 @@
 							</div>
 						</div>
 						<div class="tRow stepperOnly hidden">
+							<div class="tCell"><span>AS5600 steps/rev</span></div>
+							<div class="tCell"><input id="AS5600_StepsPerRev" type="number" min="1" max="200000" oninput="updateStepperSettings()"></div>
+							<div class="tCell"></div>
+							<div class="tCell"></div>
+						</div>
+						<div class="tRow stepperOnly hidden">
 							<div class="tCell"><span>AS5600 encoder</span></div>
-							<div class="tCell">
-								<span>Raw: </span><span id="AS5600_raw">-</span>
-								<span style="margin-left:10px;">Steps: </span><span id="AS5600_steps">-</span>
-								<span style="margin-left:10px;">Filtered: </span><span id="AS5600_filtered">-</span>
+							<div class="tCell" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+								<span>Raw:</span><span id="AS5600_raw">-</span>
+								<span>Steps:</span><span id="AS5600_steps">-</span>
+								<span>Filtered:</span><span id="AS5600_filtered">-</span>
+								<span>Planner:</span><span id="AS5600_planner">-</span>
+								<span>Scale (steps/rev):</span><span id="AS5600_scale">-</span>
 							</div>
 							<div class="tCell"><button onclick="zeroAS5600()">Set stroke zero</button></div>
 						</div>

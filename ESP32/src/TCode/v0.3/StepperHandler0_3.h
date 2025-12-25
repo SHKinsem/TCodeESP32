@@ -85,6 +85,7 @@ public:
         m_settingsFactory->getValue(AS5600_I2C_ADDR, m_as5600I2CAddr);
         m_settingsFactory->getValue(AS5600_MIN_RAW, m_as5600MinRaw);
         m_settingsFactory->getValue(AS5600_MAX_RAW, m_as5600MaxRaw);
+        m_settingsFactory->getValue(AS5600_STEPS_PER_REV, m_as5600StepsPerRev);
         m_settingsFactory->getValue(AS5600_OFFSET_STEPS, m_as5600OffsetSteps);
         s_lastOffsetSteps = m_as5600OffsetSteps;
         if (m_as5600Mode == 1 && m_as5600I2CAddr != AS5600_DEFAULT_ADDRESS)
@@ -140,7 +141,16 @@ public:
 
     void read(byte input) override { m_tcode->read(input); }
 
-    static bool getStrokeSensorSnapshot(int &raw, long &steps, long &filtered, long &offset)
+    static long getAs5600StepsPerRev()
+    {
+        if (!s_instance)
+        {
+            return AS5600_STEPS_PER_REV_DEFAULT;
+        }
+        return s_instance->m_as5600StepsPerRev;
+    }
+
+    static bool getStrokeSensorSnapshot(int &raw, long &steps, long &filtered, long &offset, long &planner)
     {
         if (!s_instance)
         {
@@ -150,6 +160,7 @@ public:
         steps = s_lastSensorSteps;
         filtered = s_lastFilteredSteps;
         offset = s_lastOffsetSteps;
+        planner = s_lastPlannerSteps;
         return true;
     }
 
@@ -174,8 +185,8 @@ private:
         {
             return false;
         }
-        const long mapped = mapLong(raw, m_as5600MinRaw, m_as5600MaxRaw, -m_strokeAxis.rangeHalf, m_strokeAxis.rangeHalf);
-        m_as5600OffsetSteps = mapped;
+        const long sensorSteps = mapLong(raw, m_as5600MinRaw, m_as5600MaxRaw, 0, m_as5600StepsPerRev);
+        m_as5600OffsetSteps = sensorSteps;
         s_lastOffsetSteps = m_as5600OffsetSteps;
         m_settingsFactory->setValue(AS5600_OFFSET_STEPS, static_cast<int>(m_as5600OffsetSteps));
         m_settingsFactory->saveCommon();
@@ -200,14 +211,6 @@ private:
         }
 
         const uint32_t nowMs = millis();
-        if (nowMs - m_lastConfigRefreshMs >= kConfigRefreshMs)
-        {
-            refreshAxisConfigs();
-            m_settingsFactory->getValue(AS5600_OFFSET_STEPS, m_as5600OffsetSteps);
-            s_lastOffsetSteps = m_as5600OffsetSteps;
-            m_lastConfigRefreshMs = nowMs;
-        }
-
         const int strokeTcode = channelRead("L0");
         const int rollTcode = channelRead("R1");
         const int pitchTcode = channelRead("R2");
@@ -254,7 +257,6 @@ private:
     // Limits to keep stepping within a safe, realistic range
     static constexpr int kMaxStepperHz = 20000;     // library clamp
     static constexpr int kMinStepperHz = 1;
-    static constexpr int kConfigRefreshMs = 500; // refresh cached settings twice per second
     static constexpr int kDefaultAccel = 20000;   // steps/s^2
     static constexpr int kMinAccel = 100;         // prevent zero/negative accel
     static constexpr int kMaxAccel = 500000;      // reasonable upper bound
@@ -262,6 +264,7 @@ private:
     static constexpr int kSensorMaxStepJump = 200;      // limit sudden jumps per refresh
     static constexpr float kSensorAlpha = 0.2f;         // low-pass factor for sensor smoothing
     static constexpr uint32_t kSensorPollIntervalMs = 25; // throttle AS5600 reads
+    static constexpr int kPosSyncThresholdSteps = 100;    // only resync planner when error exceeds this many steps
 
     const char * _TAG = TagHandler::MotorHandler;
     SettingsFactory *m_settingsFactory = nullptr;
@@ -271,7 +274,6 @@ private:
     StepperAxis m_strokeAxis;
     StepperAxis m_rollAxis;
     StepperAxis m_pitchAxis;
-    uint32_t m_lastConfigRefreshMs = 0;
     FastAccelStepperEngine m_engine;
 
     int m_as5600Mode = 0; // 0=off, 1=I2C, 2=PWM
@@ -281,6 +283,7 @@ private:
     int8_t m_as5600PwmPin = -1;
     AS5600 m_as5600;
     bool m_as5600Ok = false;
+    long m_as5600StepsPerRev = AS5600_STEPS_PER_REV_DEFAULT;
     long m_as5600OffsetSteps = 0;
     long m_filteredSensorSteps = 0;
     bool m_hasSensor = false;
@@ -294,6 +297,7 @@ private:
     inline static volatile long s_lastSensorSteps = 0;
     inline static volatile long s_lastFilteredSteps = 0;
     inline static volatile long s_lastOffsetSteps = 0;
+    inline static volatile long s_lastPlannerSteps = 0;
 
     long mapLong(long x, long inMin, long inMax, long outMin, long outMax)
     {
@@ -404,13 +408,6 @@ private:
         return attachStepper(axis);
     }
 
-    void refreshAxisConfigs()
-    {
-        applyAxisConfig(m_strokeAxis, STEPPER_STROKE_RANGE, STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_INVERT, STEPPER_STROKE_ACCEL, STEPPER_STROKE_RANGE_DEFAULT, STEPPER_STROKE_MAX_HZ_DEFAULT, STEPPER_STROKE_ACCEL_DEFAULT);
-        applyAxisConfig(m_rollAxis, STEPPER_ROLL_RANGE, STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_INVERT, STEPPER_ROLL_ACCEL, STEPPER_ROLL_RANGE_DEFAULT, STEPPER_ROLL_MAX_HZ_DEFAULT, STEPPER_ROLL_ACCEL_DEFAULT);
-        applyAxisConfig(m_pitchAxis, STEPPER_PITCH_RANGE, STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_INVERT, STEPPER_PITCH_ACCEL, STEPPER_PITCH_RANGE_DEFAULT, STEPPER_PITCH_MAX_HZ_DEFAULT, STEPPER_PITCH_ACCEL_DEFAULT);
-    }
-
     void updateAxis(StepperAxis &axis, long target, int sensorValue)
     {
         if (!axis.stepper)
@@ -418,22 +415,43 @@ private:
             return;
         }
 
+        // Track planner position for telemetry only on stroke axis
+        if (&axis == &m_strokeAxis)
+        {
+            s_lastPlannerSteps = axis.stepper->getCurrentPosition();
+        }
+
         if (sensorValue >= 0 && axis.rangeHalf > 0)
         {
-            long sensed = mapLong(sensorValue, m_as5600MinRaw, m_as5600MaxRaw, -axis.rangeHalf, axis.rangeHalf) - m_as5600OffsetSteps;
-            sensed = std::max(-axis.rangeHalf, std::min(axis.rangeHalf, sensed));
+            int minRaw = m_as5600MinRaw;
+            int maxRaw = m_as5600MaxRaw;
+            if (maxRaw - minRaw < 10)
+            {
+                minRaw = AS5600_MIN_RAW_DEFAULT;
+                maxRaw = AS5600_MAX_RAW_DEFAULT;
+            }
+            const int clampedRaw = std::min(maxRaw, std::max(minRaw, sensorValue));
+            // Map encoder raw directly into configured encoder steps-per-rev
+            long sensorSteps = mapLong(clampedRaw, minRaw, maxRaw, 0, m_as5600StepsPerRev);
+            sensorSteps -= m_as5600OffsetSteps;   // apply zero offset
 
+            // Wrap into +/- half rev range in encoder steps
+            const long halfRev = m_as5600StepsPerRev / 2;
+            while (sensorSteps > halfRev) sensorSteps -= m_as5600StepsPerRev;
+            while (sensorSteps < -halfRev) sensorSteps += m_as5600StepsPerRev;
+
+            // Use encoder-steps directly so telemetry matches planner units when scaled correctly
             s_lastSensorRaw = sensorValue;
-            s_lastSensorSteps = sensed;
+            s_lastSensorSteps = sensorSteps;
 
             if (!m_hasSensor)
             {
-                m_filteredSensorSteps = sensed;
+                m_filteredSensorSteps = sensorSteps;
                 m_hasSensor = true;
             }
             else
             {
-                long delta = sensed - m_filteredSensorSteps;
+                long delta = sensorSteps - m_filteredSensorSteps;
                 if (std::abs(delta) < kSensorDeadbandSteps)
                 {
                     delta = 0;
@@ -446,10 +464,22 @@ private:
                 }
             }
 
-            axis.stepper->setCurrentPosition(m_filteredSensorSteps);
-            s_lastFilteredSteps = m_filteredSensorSteps;
+            // Telemetry + correction: if idle and error is large, resync planner to filtered sensor steps
+            if (&axis == &m_strokeAxis)
+            {
+                long plannerPos = axis.stepper->getCurrentPosition();
+                const long error = m_filteredSensorSteps - plannerPos;
+                if (std::abs(error) > kPosSyncThresholdSteps && !axis.stepper->isRunning())
+                {
+                    axis.stepper->setCurrentPosition(m_filteredSensorSteps);
+                    plannerPos = m_filteredSensorSteps;
+                }
+                s_lastPlannerSteps = plannerPos;
+                s_lastFilteredSteps = m_filteredSensorSteps;
+            }
         }
 
+        // Issue motion only when target changes to avoid re-planning every sensor poll
         if (target != axis.lastTarget)
         {
             axis.stepper->moveTo(target);

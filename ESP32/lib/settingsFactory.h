@@ -741,6 +741,10 @@ public:
             getValue(AS5600_OFFSET_STEPS, As5600OffsetSteps);
             if(targeted) {initCommonMessages(name); return;}
         }
+        if(!name || !strcmp(name, AS5600_STEPS_PER_REV)) {
+            getValue(AS5600_STEPS_PER_REV, As5600StepsPerRev);
+            if(targeted) {initCommonMessages(name); return;}
+        }
         if(!name || !strcmp(name, STEPPER_PITCH_ACCEL)) {
             getValue(STEPPER_PITCH_ACCEL, StepperPitchAccel);
             if(targeted) {initCommonMessages(name); return;}
@@ -1023,7 +1027,8 @@ private:
             {AS5600_I2C_ADDR, "AS5600 I2C addr", "I2C address for AS5600", SettingType::Number, AS5600_I2C_ADDR_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
             {AS5600_MIN_RAW, "AS5600 min raw", "Minimum raw angle value mapped to TCode 0", SettingType::Number, AS5600_MIN_RAW_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
             {AS5600_MAX_RAW, "AS5600 max raw", "Maximum raw angle value mapped to TCode 9999", SettingType::Number, AS5600_MAX_RAW_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper}},
-            {AS5600_OFFSET_STEPS, "AS5600 offset", "Offset steps applied to AS5600 mapped value", SettingType::Number, AS5600_OFFSET_STEPS_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}}
+            {AS5600_OFFSET_STEPS, "AS5600 offset", "Offset steps applied to AS5600 mapped value", SettingType::Number, AS5600_OFFSET_STEPS_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}},
+            {AS5600_STEPS_PER_REV, "AS5600 steps/rev", "Full-step count for one encoder revolution before mapping to stroke", SettingType::Number, AS5600_STEPS_PER_REV_DEFAULT, RestartRequired::NO, {SettingProfile::Stepper, SettingProfile::Wireless}}
             ,{TWIST_SERVO_ZERO, "Twist servo zero", "The zero calibration for the twist servo", SettingType::Number, TWIST_SERVO_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
             {VALVE_SERVO_ZERO, "Valve servo zero", "The zero calibration for the valve servo", SettingType::Number, VALVE_SERVO_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
             {SQUEEZE_ZERO, "Squeeze servo zero", "The zero calibration for the squeeze servo", SettingType::Number, SQUEEZE_ZERO_DEFAULT, RestartRequired::YES, {SettingProfile::Servo}},
@@ -1202,6 +1207,7 @@ private:
     int As5600I2CAddr;
     int As5600MinRaw;
     int As5600MaxRaw;
+    int As5600StepsPerRev;
     char bootButtonCommand[MAX_COMMAND];
     uint16_t buttonAnalogDebounce;
     bool versionDisplayed;

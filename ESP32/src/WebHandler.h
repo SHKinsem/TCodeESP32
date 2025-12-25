@@ -100,13 +100,16 @@ class WebHandler : public HTTPBase {
                 long steps = 0;
                 long filtered = 0;
                 long offset = 0;
-                const bool available = StepperHandler0_3::getStrokeSensorSnapshot(raw, steps, filtered, offset);
+                long planner = 0;
+                const bool available = StepperHandler0_3::getStrokeSensorSnapshot(raw, steps, filtered, offset, planner);
                 JsonDocument doc;
                 doc["available"] = available;
                 doc["raw"] = raw;
                 doc["steps"] = steps;
                 doc["filtered"] = filtered;
                 doc["offset"] = offset;
+                doc["planner"] = planner;
+                doc["stepsPerRev"] = StepperHandler0_3::getAs5600StepsPerRev();
                 String out;
                 serializeJson(doc, out);
                 AsyncWebServerResponse *response = request->beginResponse(200, "application/json", out);

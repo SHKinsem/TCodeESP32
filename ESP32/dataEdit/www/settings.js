@@ -2317,6 +2317,8 @@ function setStepperSettingsUI() {
     document.getElementById('AS5600_I2C_Addr').value = userSettings["AS5600_I2C_Addr"];
     document.getElementById('AS5600_MinRaw').value = userSettings["AS5600_MinRaw"];
     document.getElementById('AS5600_MaxRaw').value = userSettings["AS5600_MaxRaw"];
+    const asSteps = document.getElementById('AS5600_StepsPerRev');
+    if(asSteps) asSteps.value = userSettings["AS5600_StepsPerRev"];
 
     startAS5600Telemetry();
 }
@@ -2342,6 +2344,8 @@ function updateStepperSettings() {
         userSettings["AS5600_I2C_Addr"] = parseInt(document.getElementById('AS5600_I2C_Addr').value);
         userSettings["AS5600_MinRaw"] = parseInt(document.getElementById('AS5600_MinRaw').value);
         userSettings["AS5600_MaxRaw"] = parseInt(document.getElementById('AS5600_MaxRaw').value);
+        const asSteps = document.getElementById('AS5600_StepsPerRev');
+        if(asSteps) userSettings["AS5600_StepsPerRev"] = parseInt(asSteps.value);
         startAS5600Telemetry();
         setRestartRequired();
         updateUserSettings(0);
@@ -2356,7 +2360,7 @@ function clearAS5600TelemetryTimer() {
 }
 
 function resetAS5600TelemetryUI() {
-    const ids = ["AS5600_raw", "AS5600_steps", "AS5600_filtered"];
+    const ids = ["AS5600_raw", "AS5600_steps", "AS5600_filtered", "AS5600_planner"];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if(el) {
@@ -2369,9 +2373,13 @@ function updateAS5600TelemetryUI(data) {
     const raw = document.getElementById('AS5600_raw');
     const steps = document.getElementById('AS5600_steps');
     const filtered = document.getElementById('AS5600_filtered');
+    const planner = document.getElementById('AS5600_planner');
+    const scale = document.getElementById('AS5600_scale');
     if(raw && data.raw !== undefined) raw.innerText = data.raw;
     if(steps && data.steps !== undefined) steps.innerText = data.steps;
     if(filtered && data.filtered !== undefined) filtered.innerText = data.filtered;
+    if(planner && data.planner !== undefined) planner.innerText = data.planner;
+    if(scale && data.stepsPerRev !== undefined) scale.innerText = data.stepsPerRev;
 }
 
 function fetchAS5600Telemetry() {
