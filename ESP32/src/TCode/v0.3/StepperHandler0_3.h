@@ -255,11 +255,11 @@ private:
     };
 
     // Limits to keep stepping within a safe, realistic range
-    static constexpr int kMaxStepperHz = 20000;     // library clamp
+    static constexpr int kMaxStepperHz = 100000;     // library clamp
     static constexpr int kMinStepperHz = 1;
     static constexpr int kDefaultAccel = 20000;   // steps/s^2
     static constexpr int kMinAccel = 100;         // prevent zero/negative accel
-    static constexpr int kMaxAccel = 500000;      // reasonable upper bound
+    static constexpr int kMaxAccel = 1000000;      // reasonable upper bound
     static constexpr int kSensorDeadbandSteps = 3;      // ignore tiny noise
     static constexpr int kSensorMaxStepJump = 200;      // limit sudden jumps per refresh
     static constexpr float kSensorAlpha = 0.2f;         // low-pass factor for sensor smoothing
