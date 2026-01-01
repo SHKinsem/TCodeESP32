@@ -1,4 +1,4 @@
-/* MIT License
+﻿/* MIT License
 
 Copyright (c) 2024 Jason C. Fain
 
@@ -24,10 +24,13 @@ SOFTWARE. */
 
 #include <Wire.h>
 #include <AS5600.h>
+#include <HardwareSerial.h>
 #include <driver/gpio.h>
 #include <FastAccelStepper.h>
+#include <TMCStepper.h>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include "TCode0_3.h"
 #include "SettingsHandler.h"
@@ -36,6 +39,7 @@ SOFTWARE. */
 #include "TagHandler.h"
 #include "settingsFactory.h"
 #include "pinMap.h"
+#include "StepperAxis.h"
 
 // Simple step/dir stepper handler for OSR using TCode v0.3
 class StepperHandler0_3 : public MotorHandler0_3
@@ -73,12 +77,45 @@ public:
         m_tcode->RegisterAxis("R1", "Roll");
         m_tcode->RegisterAxis("R2", "Pitch");
 
-        if (!configureAxis(m_strokeAxis, m_pinMap->strokeStep(), m_pinMap->strokeDir(), STEPPER_STROKE_RANGE, STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_INVERT, STEPPER_STROKE_ACCEL, STEPPER_STROKE_RANGE_DEFAULT, STEPPER_STROKE_MAX_HZ_DEFAULT, STEPPER_STROKE_ACCEL_DEFAULT))
+        stepper::StepperAxis::Config strokeCfg;
+        strokeCfg.name = "Stroke";
+        strokeCfg.stepPin = m_pinMap->strokeStep();
+        strokeCfg.dirPin = m_pinMap->strokeDir();
+        strokeCfg.rangeSteps = resolveRange(STEPPER_STROKE_RANGE, STEPPER_STROKE_RANGE_DEFAULT);
+        strokeCfg.maxHz = clampHz(resolveInt(STEPPER_STROKE_MAX_HZ, STEPPER_STROKE_MAX_HZ_DEFAULT));
+        strokeCfg.accel = clampAccel(resolveInt(STEPPER_STROKE_ACCEL, STEPPER_STROKE_ACCEL_DEFAULT));
+        strokeCfg.invertDir = resolveBool(STEPPER_STROKE_INVERT);
+        strokeCfg.sensorPollIntervalMs = kSensorPollIntervalMs;
+        strokeCfg.sensorDeadbandSteps = kSensorDeadbandSteps;
+        strokeCfg.sensorMaxStepJump = kSensorMaxStepJump;
+        strokeCfg.sensorAlpha = kSensorAlpha;
+        strokeCfg.posSyncThresholdSteps = kPosSyncThresholdSteps;
+        if (!m_strokeAxis.configure(strokeCfg, m_engine))
             m_initFailed = true;
-        if (!configureAxis(m_rollAxis, m_pinMap->rollStep(), m_pinMap->rollDir(), STEPPER_ROLL_RANGE, STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_INVERT, STEPPER_ROLL_ACCEL, STEPPER_ROLL_RANGE_DEFAULT, STEPPER_ROLL_MAX_HZ_DEFAULT, STEPPER_ROLL_ACCEL_DEFAULT))
+
+        stepper::StepperAxis::Config rollCfg;
+        rollCfg.name = "Roll";
+        rollCfg.stepPin = m_pinMap->rollStep();
+        rollCfg.dirPin = m_pinMap->rollDir();
+        rollCfg.rangeSteps = resolveRange(STEPPER_ROLL_RANGE, STEPPER_ROLL_RANGE_DEFAULT);
+        rollCfg.maxHz = clampHz(resolveInt(STEPPER_ROLL_MAX_HZ, STEPPER_ROLL_MAX_HZ_DEFAULT));
+        rollCfg.accel = clampAccel(resolveInt(STEPPER_ROLL_ACCEL, STEPPER_ROLL_ACCEL_DEFAULT));
+        rollCfg.invertDir = resolveBool(STEPPER_ROLL_INVERT);
+        if (!m_rollAxis.configure(rollCfg, m_engine))
             m_initFailed = true;
-        if (!configureAxis(m_pitchAxis, m_pinMap->pitchStep(), m_pinMap->pitchDir(), STEPPER_PITCH_RANGE, STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_INVERT, STEPPER_PITCH_ACCEL, STEPPER_PITCH_RANGE_DEFAULT, STEPPER_PITCH_MAX_HZ_DEFAULT, STEPPER_PITCH_ACCEL_DEFAULT))
+
+        stepper::StepperAxis::Config pitchCfg;
+        pitchCfg.name = "Pitch";
+        pitchCfg.stepPin = m_pinMap->pitchStep();
+        pitchCfg.dirPin = m_pinMap->pitchDir();
+        pitchCfg.rangeSteps = resolveRange(STEPPER_PITCH_RANGE, STEPPER_PITCH_RANGE_DEFAULT);
+        pitchCfg.maxHz = clampHz(resolveInt(STEPPER_PITCH_MAX_HZ, STEPPER_PITCH_MAX_HZ_DEFAULT));
+        pitchCfg.accel = clampAccel(resolveInt(STEPPER_PITCH_ACCEL, STEPPER_PITCH_ACCEL_DEFAULT));
+        pitchCfg.invertDir = resolveBool(STEPPER_PITCH_INVERT);
+        if (!m_pitchAxis.configure(pitchCfg, m_engine))
             m_initFailed = true;
+
+        setupTmcDrivers();
 
         // AS5600 feedback is optional and only used on stroke for simple closed loop
         m_settingsFactory->getValue(AS5600_MODE, m_as5600Mode);
@@ -87,29 +124,26 @@ public:
         m_settingsFactory->getValue(AS5600_MAX_RAW, m_as5600MaxRaw);
         m_settingsFactory->getValue(AS5600_STEPS_PER_REV, m_as5600StepsPerRev);
         m_settingsFactory->getValue(AS5600_OFFSET_STEPS, m_as5600OffsetSteps);
-        s_lastOffsetSteps = m_as5600OffsetSteps;
         if (m_as5600Mode == 1 && m_as5600I2CAddr != AS5600_DEFAULT_ADDRESS)
         {
             LogHandler::warning(_TAG, "AS5600 custom I2C address unsupported; using 0x36");
             m_as5600I2CAddr = AS5600_DEFAULT_ADDRESS;
         }
         m_as5600PwmPin = m_pinMap->as5600Pwm();
-        if (m_as5600Mode == 1)
+        if (m_as5600Mode != 0)
         {
-            Wire.begin(m_pinMap->i2cSda(), m_pinMap->i2cScl());
-            Wire.setClock(100000); // be conservative to reduce boot errors
-            m_as5600FailCount = 0;
-            m_as5600BackoffUntilMs = 0;
-            m_as5600Ok = m_as5600.begin();
-            if (!m_as5600Ok)
-            {
-                LogHandler::warning(_TAG, "AS5600 not detected at boot; disabling encoder");
-                m_as5600Mode = 0;
-            }
-        }
-        else if (m_as5600Mode == 2 && m_as5600PwmPin >= 0)
-        {
-            pinMode(m_as5600PwmPin, INPUT);
+            stepper::As5600Config encCfg;
+            encCfg.mode = m_as5600Mode;
+            encCfg.i2cAddr = m_as5600I2CAddr;
+            encCfg.minRaw = m_as5600MinRaw;
+            encCfg.maxRaw = m_as5600MaxRaw;
+            encCfg.stepsPerRev = m_as5600StepsPerRev;
+            encCfg.offsetSteps = m_as5600OffsetSteps;
+            encCfg.pwmPin = m_as5600PwmPin;
+            encCfg.sdaPin = m_pinMap->i2cSda();
+            encCfg.sclPin = m_pinMap->i2cScl();
+            auto encoder = std::make_unique<stepper::As5600Encoder>(encCfg);
+            m_strokeAxis.setEncoder(std::move(encoder), strokeCfg);
         }
 
         setupCommon();
@@ -147,7 +181,8 @@ public:
         {
             return AS5600_STEPS_PER_REV_DEFAULT;
         }
-        return s_instance->m_as5600StepsPerRev;
+        const long stepsPerRev = s_instance->m_strokeAxis.encoderStepsPerRev();
+        return stepsPerRev > 0 ? stepsPerRev : s_instance->m_as5600StepsPerRev;
     }
 
     static bool getStrokeSensorSnapshot(int &raw, long &steps, long &filtered, long &offset, long &planner)
@@ -156,12 +191,9 @@ public:
         {
             return false;
         }
-        raw = s_lastSensorRaw;
-        steps = s_lastSensorSteps;
-        filtered = s_lastFilteredSteps;
-        offset = s_lastOffsetSteps;
-        planner = s_lastPlannerSteps;
-        return true;
+        bool ok = s_instance->m_strokeAxis.getSensorSnapshot(raw, steps, filtered, planner);
+        offset = s_instance->m_as5600OffsetSteps;
+        return ok;
     }
 
     static bool zeroStrokeFromSensor()
@@ -176,30 +208,17 @@ public:
 private:
     bool zeroStrokeFromSensorInternal()
     {
-        if (m_as5600Mode == 0)
+        if (!m_strokeAxis.hasEncoder())
         {
             return false;
         }
-        const int raw = readAS5600();
-        if (raw < 0)
+        if (!m_strokeAxis.zeroFromEncoder())
         {
             return false;
         }
-        const long sensorSteps = mapLong(raw, m_as5600MinRaw, m_as5600MaxRaw, 0, m_as5600StepsPerRev);
-        m_as5600OffsetSteps = sensorSteps;
-        s_lastOffsetSteps = m_as5600OffsetSteps;
+        m_as5600OffsetSteps = m_strokeAxis.encoderOffsetSteps();
         m_settingsFactory->setValue(AS5600_OFFSET_STEPS, static_cast<int>(m_as5600OffsetSteps));
         m_settingsFactory->saveCommon();
-
-        m_filteredSensorSteps = 0;
-        m_hasSensor = false;
-        s_lastSensorRaw = raw;
-        s_lastSensorSteps = 0;
-        s_lastFilteredSteps = 0;
-        if (m_strokeAxis.stepper)
-        {
-            m_strokeAxis.stepper->setCurrentPosition(0);
-        }
         return true;
     }
 
@@ -215,43 +234,28 @@ private:
         const int rollTcode = channelRead("R1");
         const int pitchTcode = channelRead("R2");
 
-        const long strokeTarget = mapLong(strokeTcode, TCODE_MIN, TCODE_MAX, -m_strokeAxis.rangeHalf, m_strokeAxis.rangeHalf);
-        const long rollTarget = mapLong(rollTcode, TCODE_MIN, TCODE_MAX, -m_rollAxis.rangeHalf, m_rollAxis.rangeHalf);
-        const long pitchTarget = mapLong(pitchTcode, TCODE_MIN, TCODE_MAX, -m_pitchAxis.rangeHalf, m_pitchAxis.rangeHalf);
+        const long strokeTarget = mapLong(strokeTcode, TCODE_MIN, TCODE_MAX, -m_strokeAxis.rangeHalf(), m_strokeAxis.rangeHalf());
+        const long rollTarget = mapLong(rollTcode, TCODE_MIN, TCODE_MAX, -m_rollAxis.rangeHalf(), m_rollAxis.rangeHalf());
+        const long pitchTarget = mapLong(pitchTcode, TCODE_MIN, TCODE_MAX, -m_pitchAxis.rangeHalf(), m_pitchAxis.rangeHalf());
 
-        int strokeSensor = -1;
-        if (m_as5600Mode != 0)
-        {
-            if (nowMs - m_as5600LastPollMs >= kSensorPollIntervalMs)
-            {
-                strokeSensor = readAS5600();
-                m_as5600LastPollMs = nowMs;
-                m_as5600LastRaw = strokeSensor;
-            }
-            else
-            {
-                strokeSensor = m_as5600LastRaw;
-            }
-        }
+        m_strokeAxis.update(strokeTarget, nowMs);
+        m_rollAxis.update(rollTarget, nowMs);
+        m_pitchAxis.update(pitchTarget, nowMs);
 
-        updateAxis(m_strokeAxis, strokeTarget, strokeSensor);
-        updateAxis(m_rollAxis, rollTarget, -1);
-        updateAxis(m_pitchAxis, pitchTarget, -1);
+        pollTmcStatus(nowMs);
 
         executeCommon(strokeTcode);
     }
 
 private:
-    struct StepperAxis
+    struct TmcAxisConfig
     {
-        int8_t stepPin = -1;
-        int8_t dirPin = -1;
-        FastAccelStepper *stepper = nullptr;
-        long rangeHalf = 0;
-        int maxHz = 1000;
-        int accel = 20000;
-        bool invertDir = false;
-        long lastTarget = 0;
+        uint8_t address = 0;
+        int runCurrentmA = 1400;
+        int holdCurrentmA = 400;
+        int microsteps = 16;
+        bool stealthChop = false;
+        bool spreadCycle = true;
     };
 
     // Limits to keep stepping within a safe, realistic range
@@ -265,39 +269,48 @@ private:
     static constexpr float kSensorAlpha = 0.2f;         // low-pass factor for sensor smoothing
     static constexpr uint32_t kSensorPollIntervalMs = 25; // throttle AS5600 reads
     static constexpr int kPosSyncThresholdSteps = 100;    // only resync planner when error exceeds this many steps
+    static constexpr uint32_t kTmcStatusIntervalMs = 1000;
+
+    // TMC2209 defaults now target UART2 (TX2=GPIO17, RX2=GPIO16)
+    static constexpr bool kTmcEnabledDefault = true;
+    static constexpr int kTmcUartTxPinDefault = 17;
+    static constexpr int kTmcUartRxPinDefault = 16;
+    static constexpr uint32_t kTmcUartBaudDefault = 115200;
+    static constexpr float kTmcRsenseDefault = 0.110f; // ohms (calculator: VSENSE=0, Rsense≈0.108)
+    static constexpr TmcAxisConfig kTmcStrokeConfigDefault{0, 1500, 750, 16, false, true};
+    static constexpr TmcAxisConfig kTmcRollConfigDefault{1, 700, 350, 16, false, true};
+    static constexpr TmcAxisConfig kTmcPitchConfigDefault{2, 700, 350, 16, false, true};
 
     const char * _TAG = TagHandler::MotorHandler;
     SettingsFactory *m_settingsFactory = nullptr;
     PinMapOSRStepper *m_pinMap = nullptr;
     bool m_initFailed = false;
 
-    StepperAxis m_strokeAxis;
-    StepperAxis m_rollAxis;
-    StepperAxis m_pitchAxis;
+    stepper::StepperAxis m_strokeAxis{"Stroke"};
+    stepper::StepperAxis m_rollAxis{"Roll"};
+    stepper::StepperAxis m_pitchAxis{"Pitch"};
     FastAccelStepperEngine m_engine;
+
+    bool m_tmcEnabled = kTmcEnabledDefault;
+    int m_tmcUartTxPin = kTmcUartTxPinDefault;
+    int m_tmcUartRxPin = kTmcUartRxPinDefault;
+    uint32_t m_tmcUartBaud = kTmcUartBaudDefault;
+    float m_tmcRsense = kTmcRsenseDefault;
+    TmcAxisConfig m_tmcStrokeConfig = kTmcStrokeConfigDefault;
+    TmcAxisConfig m_tmcRollConfig = kTmcRollConfigDefault;
+    TmcAxisConfig m_tmcPitchConfig = kTmcPitchConfigDefault;
+    HardwareSerial m_tmcSerial = HardwareSerial(2);
+    uint32_t m_lastTmcStatusMs = 0;
 
     int m_as5600Mode = 0; // 0=off, 1=I2C, 2=PWM
     int m_as5600I2CAddr = AS5600_I2C_ADDR_DEFAULT;
     int m_as5600MinRaw = AS5600_MIN_RAW_DEFAULT;
     int m_as5600MaxRaw = AS5600_MAX_RAW_DEFAULT;
-    int8_t m_as5600PwmPin = -1;
-    AS5600 m_as5600;
-    bool m_as5600Ok = false;
     long m_as5600StepsPerRev = AS5600_STEPS_PER_REV_DEFAULT;
     long m_as5600OffsetSteps = 0;
-    long m_filteredSensorSteps = 0;
-    bool m_hasSensor = false;
-    int m_as5600FailCount = 0;
-    uint32_t m_as5600BackoffUntilMs = 0;
-    uint32_t m_as5600LastPollMs = 0;
-    int m_as5600LastRaw = -1;
+    int8_t m_as5600PwmPin = -1;
 
     inline static StepperHandler0_3 *s_instance = nullptr;
-    inline static volatile int s_lastSensorRaw = -1;
-    inline static volatile long s_lastSensorSteps = 0;
-    inline static volatile long s_lastFilteredSteps = 0;
-    inline static volatile long s_lastOffsetSteps = 0;
-    inline static volatile long s_lastPlannerSteps = 0;
 
     long mapLong(long x, long inMin, long inMax, long outMin, long outMax)
     {
@@ -322,239 +335,130 @@ private:
         return std::max(kMinAccel, std::min(kMaxAccel, accel));
     }
 
-    bool applyAxisConfig(StepperAxis &axis, const char *rangeKey, const char *maxHzKey, const char *invertKey, const char *accelKey, int rangeDefault, int maxHzDefault, int accelDefault)
+    int resolveRange(const char *key, int defaultVal)
     {
-        int rangeSteps = rangeDefault;
-        m_settingsFactory->getValue(rangeKey, rangeSteps);
-        if (rangeSteps <= 0)
+        int value = defaultVal;
+        m_settingsFactory->getValue(key, value);
+        if (value <= 0)
         {
-            rangeSteps = rangeDefault;
+            value = defaultVal;
         }
-
-        int maxHz = maxHzDefault;
-        m_settingsFactory->getValue(maxHzKey, maxHz);
-        maxHz = clampHz(maxHz);
-
-        int accel = accelDefault;
-        m_settingsFactory->getValue(accelKey, accel);
-        accel = clampAccel(accel);
-
-        bool invertDir = false;
-        m_settingsFactory->getValue(invertKey, invertDir);
-
-        const bool prevInvert = axis.invertDir;
-        axis.rangeHalf = std::max(1, rangeSteps / 2);
-        axis.maxHz = maxHz;
-        axis.accel = accel;
-        axis.invertDir = invertDir;
-
-        if (axis.stepper)
-        {
-            axis.stepper->setSpeedInHz(axis.maxHz);
-            axis.stepper->setAcceleration(axis.accel);
-            if (axis.invertDir != prevInvert)
-            {
-                // Only touch DIR polarity if the setting changed to avoid mid-move flips
-                axis.stepper->setDirectionPin(axis.dirPin, !axis.invertDir);
-            }
-        }
-
-        return true;
+        return value;
     }
 
-    bool attachStepper(StepperAxis &axis)
+    int resolveInt(const char *key, int defaultVal)
     {
-        if (axis.stepPin < 0 || axis.dirPin < 0)
-        {
-            return false;
-        }
-
-        axis.stepper = m_engine.stepperConnectToPin(axis.stepPin);
-        if (!axis.stepper)
-        {
-            LogHandler::error(_TAG, "Failed to attach stepper to pin %d", axis.stepPin);
-            return false;
-        }
-
-        // true means DIR high = count up; invert flips that
-        axis.stepper->setDirectionPin(axis.dirPin, !axis.invertDir);
-        axis.stepper->setSpeedInHz(axis.maxHz);
-        axis.stepper->setAcceleration(axis.accel);
-        axis.stepper->setCurrentPosition(0);
-        axis.lastTarget = 0;
-        return true;
+        int value = defaultVal;
+        m_settingsFactory->getValue(key, value);
+        return value;
     }
 
-    bool configureAxis(StepperAxis &axis, int8_t stepPin, int8_t dirPin, const char *rangeKey, const char *maxHzKey, const char *invertKey, const char *accelKey, int rangeDefault, int maxHzDefault, int accelDefault)
+    bool resolveBool(const char *key)
     {
-        if (stepPin < 0 || dirPin < 0)
-        {
-            LogHandler::error(_TAG, "Invalid step/dir pins for axis (%d, %d)", stepPin, dirPin);
-            return false;
-        }
-
-        axis.stepPin = stepPin;
-        axis.dirPin = dirPin;
-
-        gpio_reset_pin(static_cast<gpio_num_t>(axis.stepPin));
-        gpio_reset_pin(static_cast<gpio_num_t>(axis.dirPin));
-        gpio_set_direction(static_cast<gpio_num_t>(axis.stepPin), GPIO_MODE_OUTPUT);
-        gpio_set_direction(static_cast<gpio_num_t>(axis.dirPin), GPIO_MODE_OUTPUT);
-        gpio_set_level(static_cast<gpio_num_t>(axis.stepPin), 0);
-        gpio_set_level(static_cast<gpio_num_t>(axis.dirPin), 0);
-
-        applyAxisConfig(axis, rangeKey, maxHzKey, invertKey, accelKey, rangeDefault, maxHzDefault, accelDefault);
-
-        return attachStepper(axis);
+        bool value = false;
+        m_settingsFactory->getValue(key, value);
+        return value;
     }
 
-    void updateAxis(StepperAxis &axis, long target, int sensorValue)
+    void setupTmcDrivers()
     {
-        if (!axis.stepper)
+        if (!kTmcEnabledDefault)
+        {
+            return;
+        }
+        if (m_tmcUartTxPin < 0 || m_tmcUartRxPin < 0)
+        {
+            LogHandler::warning(_TAG, "TMC2209 UART disabled (no TX/RX pins configured)");
+            return;
+        }
+
+        m_tmcEnabled = true;
+        LogHandler::info(_TAG, "TMC2209 UART enabled on TX%d/RX%d @%lu", m_tmcUartTxPin, m_tmcUartRxPin, static_cast<unsigned long>(m_tmcUartBaud));
+        m_tmcSerial.begin(m_tmcUartBaud, SERIAL_8N1, m_tmcUartRxPin, m_tmcUartTxPin);
+
+        configureTmcAxis(m_strokeAxis, m_tmcStrokeConfig);
+        configureTmcAxis(m_rollAxis, m_tmcRollConfig);
+        configureTmcAxis(m_pitchAxis, m_tmcPitchConfig);
+    }
+
+    void configureTmcAxis(stepper::StepperAxis &axis, const TmcAxisConfig &cfg)
+    {
+        if (!m_tmcEnabled)
+        {
+            return;
+        }
+        if (!axis.stepper())
+        {
+            return;
+        }
+        if (axis.tmcDriver())
         {
             return;
         }
 
-        // Track planner position for telemetry only on stroke axis
-        if (&axis == &m_strokeAxis)
+        const uint8_t address = cfg.address & 0x03;
+        auto *driver = new TMC2209Stepper(&m_tmcSerial, m_tmcRsense, address);
+        if (!driver)
         {
-            s_lastPlannerSteps = axis.stepper->getCurrentPosition();
-        }
-
-        if (sensorValue >= 0 && axis.rangeHalf > 0)
-        {
-            int minRaw = m_as5600MinRaw;
-            int maxRaw = m_as5600MaxRaw;
-            if (maxRaw - minRaw < 10)
-            {
-                minRaw = AS5600_MIN_RAW_DEFAULT;
-                maxRaw = AS5600_MAX_RAW_DEFAULT;
-            }
-            const int clampedRaw = std::min(maxRaw, std::max(minRaw, sensorValue));
-            // Map encoder raw directly into configured encoder steps-per-rev
-            long sensorSteps = mapLong(clampedRaw, minRaw, maxRaw, 0, m_as5600StepsPerRev);
-            sensorSteps -= m_as5600OffsetSteps;   // apply zero offset
-
-            // Wrap into +/- half rev range in encoder steps
-            const long halfRev = m_as5600StepsPerRev / 2;
-            while (sensorSteps > halfRev) sensorSteps -= m_as5600StepsPerRev;
-            while (sensorSteps < -halfRev) sensorSteps += m_as5600StepsPerRev;
-
-            // Use encoder-steps directly so telemetry matches planner units when scaled correctly
-            s_lastSensorRaw = sensorValue;
-            s_lastSensorSteps = sensorSteps;
-
-            if (!m_hasSensor)
-            {
-                m_filteredSensorSteps = sensorSteps;
-                m_hasSensor = true;
-            }
-            else
-            {
-                long delta = sensorSteps - m_filteredSensorSteps;
-                if (std::abs(delta) < kSensorDeadbandSteps)
-                {
-                    delta = 0;
-                }
-                else
-                {
-                    if (delta > kSensorMaxStepJump) delta = kSensorMaxStepJump;
-                    if (delta < -kSensorMaxStepJump) delta = -kSensorMaxStepJump;
-                    m_filteredSensorSteps += static_cast<long>(delta * kSensorAlpha);
-                }
-            }
-
-            // Telemetry + correction: if idle and error is large, resync planner to filtered sensor steps
-            if (&axis == &m_strokeAxis)
-            {
-                long plannerPos = axis.stepper->getCurrentPosition();
-                const long error = m_filteredSensorSteps - plannerPos;
-                if (std::abs(error) > kPosSyncThresholdSteps && !axis.stepper->isRunning())
-                {
-                    axis.stepper->setCurrentPosition(m_filteredSensorSteps);
-                    plannerPos = m_filteredSensorSteps;
-                }
-                s_lastPlannerSteps = plannerPos;
-                s_lastFilteredSteps = m_filteredSensorSteps;
-            }
-        }
-
-        // Issue motion only when target changes to avoid re-planning every sensor poll
-        if (target != axis.lastTarget)
-        {
-            axis.stepper->moveTo(target);
-            axis.lastTarget = target;
-        }
-    }
-
-    int readAS5600()
-    {
-        if (m_as5600Mode == 1)
-        {
-            return readAS5600I2C();
-        }
-        if (m_as5600Mode == 2)
-        {
-            return readAS5600Pwm();
-        }
-        return -1;
-    }
-
-    int readAS5600I2C()
-    {
-        const uint32_t now = millis();
-        if (m_as5600BackoffUntilMs && now < m_as5600BackoffUntilMs)
-        {
-            return -1;
-        }
-        if (!m_as5600Ok)
-        {
-            return -1;
-        }
-
-        const uint16_t angle = m_as5600.rawAngle();
-        const int err = m_as5600.lastError();
-        if (err != AS5600_OK)
-        {
-            handleAS5600Failure();
-            return -1;
-        }
-
-        m_as5600FailCount = 0;
-        m_as5600BackoffUntilMs = 0;
-        return static_cast<int>(angle & 0x0FFF);
-    }
-
-    void handleAS5600Failure()
-    {
-        m_as5600FailCount++;
-        if (m_as5600FailCount >= 2)
-        {
-            LogHandler::warning(_TAG, "AS5600 disabled after repeated I2C errors");
-            m_as5600Mode = 0;
+            LogHandler::warning(_TAG, "TMC alloc failed for %s", axis.name());
             return;
         }
-        if (m_as5600FailCount % 5 == 0)
+
+        axis.attachTmcDriver(driver);
+        driver->begin();
+        driver->pdn_disable(true);
+        driver->mstep_reg_select(true);
+        driver->I_scale_analog(false);
+        driver->rms_current(cfg.runCurrentmA, cfg.holdCurrentmA > 0 ? static_cast<float>(cfg.holdCurrentmA) / static_cast<float>(cfg.runCurrentmA) : 0.5f);
+        driver->microsteps(cfg.microsteps);
+        driver->en_spreadCycle(cfg.spreadCycle);
+        driver->pwm_autoscale(true);
+        driver->pwm_autograd(true);
+        driver->toff(4);
+        driver->blank_time(24);       // TBL=1 -> 24 tCLK per calculator
+        // driver->hysteresis_start(6);  // HSTRT from calculator
+        // driver->hysteresis_end(3);    // HEND from calculator
+
+        const uint8_t result = driver->test_connection();
+        if (result != 0)
         {
-            m_as5600BackoffUntilMs = millis() + 1000;
-            LogHandler::warning(_TAG, "AS5600 I2C error, backing off");
+            LogHandler::warning(_TAG, "TMC2209 %s UART test failed (code %u)", axis.name(), result);
+        }
+        else
+        {
+            LogHandler::info(_TAG, "TMC2209 %s ready (addr %u)", axis.name(), address);
         }
     }
 
-    int readAS5600Pwm()
+    void pollTmcStatus(uint32_t nowMs)
     {
-        if (m_as5600PwmPin < 0)
+        if (!m_tmcEnabled)
         {
-            return -1;
+            return;
         }
+        if (nowMs - m_lastTmcStatusMs < kTmcStatusIntervalMs)
+        {
+            return;
+        }
+        m_lastTmcStatusMs = nowMs;
 
-        const unsigned long highTime = pulseIn(m_as5600PwmPin, HIGH, 2500);
-        const unsigned long lowTime = pulseIn(m_as5600PwmPin, LOW, 2500);
-        const unsigned long period = highTime + lowTime;
-        if (period == 0)
-        {
-            return -1;
-        }
-        return static_cast<int>((highTime * 4095UL) / period);
+        auto checkAxis = [&](stepper::StepperAxis &axis) {
+            auto *driver = axis.tmcDriver();
+            if (!driver)
+            {
+                return;
+            }
+            const bool hadError = driver->drv_err();
+            const bool hadUv = driver->uv_cp();
+            if (hadError || hadUv)
+            {
+                LogHandler::warning(_TAG, "TMC2209 %s error: drv_err=%d uv_cp=%d", axis.name(), static_cast<int>(hadError), static_cast<int>(hadUv));
+                driver->GSTAT(0b111);
+            }
+        };
+
+        checkAxis(m_strokeAxis);
+        checkAxis(m_rollAxis);
+        checkAxis(m_pitchAxis);
     }
 };

@@ -750,7 +750,32 @@ function setSystemInfo() {
         logLevelElement.appendChild(option);
     }
 
+        updateConnectionInfo();
     var excludedTagsElement = document.getElementById('log-exclude-tags');
+
+    function setConnectionField(id, value) {
+        const element = document.getElementById(id);
+        if(!element)
+            return;
+        element.value = value !== undefined && value !== null && value !== "" ? value : "N/A";
+    }
+
+    function updateConnectionInfo() {
+        const apMode = systemInfo && systemInfo.apMode;
+        setConnectionField("connectionMode", apMode ? "Access Point" : "WiFi Station");
+        setConnectionField("stationSSID", wifiSettings && wifiSettings["ssid"] ? wifiSettings["ssid"] : "");
+        setConnectionField("apSSID", wifiSettings && wifiSettings["apModeSSID"] ? wifiSettings["apModeSSID"] : "");
+        setConnectionField("connectionHostname", wifiSettings && wifiSettings["hostname"] ? wifiSettings["hostname"] : "");
+
+        const localIP = systemInfo && systemInfo.localIP ? systemInfo.localIP : (wifiSettings && wifiSettings["localIP"] ? wifiSettings["localIP"] : "");
+        setConnectionField("connectionLocalIP", localIP);
+        setConnectionField("connectionGateway", systemInfo && systemInfo.gateway ? systemInfo.gateway : (wifiSettings && wifiSettings["gateway"] ? wifiSettings["gateway"] : ""));
+        setConnectionField("connectionSubnet", systemInfo && systemInfo.subnet ? systemInfo.subnet : (wifiSettings && wifiSettings["subnet"] ? wifiSettings["subnet"] : ""));
+        setConnectionField("connectionDNS", systemInfo && systemInfo.dns1 ? systemInfo.dns1 : (wifiSettings && wifiSettings["dns1"] ? wifiSettings["dns1"] : ""));
+        const apIp = wifiSettings && wifiSettings["apModeIP"] ? wifiSettings["apModeIP"] : (systemInfo && systemInfo.defaultIP ? systemInfo.defaultIP : localIP);
+        setConnectionField("connectionApIP", apIp);
+        setConnectionField("connectionWebPort", wifiSettings && wifiSettings["webServerPort"] ? wifiSettings["webServerPort"] : "");
+    }
     removeAllChildren(excludedTagsElement);
     systemInfo.availableTags.forEach(element => {
         var option = document.createElement("option");
@@ -848,6 +873,7 @@ function setWifiSettings() {
     document.getElementById("apModeIP").value = wifiSettings["apModeIP"];
     document.getElementById("apModeSubnet").value = wifiSettings["apModeSubnet"];
     document.getElementById("apModeGateway").value = wifiSettings["apModeGateway"];
+    updateConnectionInfo();
 }
 function setPinoutSettings() {
     const stepperStrokeStep = document.getElementById("StrokeStepperStep_PIN");
