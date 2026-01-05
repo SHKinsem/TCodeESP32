@@ -239,6 +239,9 @@ function getWifiSettings(chain) {
             getMotionProviderSettings(chain);
         else
             hideLoading();
+    }, function() {
+        showError("Error getting wifi settings!");
+        hideLoading();
     });
 }
 

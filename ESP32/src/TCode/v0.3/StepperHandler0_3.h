@@ -55,6 +55,7 @@ public:
 
         DeviceType deviceType = DeviceType::OSR;
         m_settingsFactory->getValue(DEVICE_TYPE, deviceType);
+        m_deviceType = deviceType;
         if (deviceType != DeviceType::OSR_STEPPER)
         {
             LogHandler::error(_TAG, "Stepper handler requires device type OSR_STEPPER");
@@ -234,13 +235,14 @@ private:
         const int rollTcode = channelRead("R1");
         const int pitchTcode = channelRead("R2");
 
-        const long strokeTarget = mapLong(strokeTcode, TCODE_MIN, TCODE_MAX, -m_strokeAxis.rangeHalf(), m_strokeAxis.rangeHalf());
-        const long rollTarget = mapLong(rollTcode, TCODE_MIN, TCODE_MAX, -m_rollAxis.rangeHalf(), m_rollAxis.rangeHalf());
-        const long pitchTarget = mapLong(pitchTcode, TCODE_MIN, TCODE_MAX, -m_pitchAxis.rangeHalf(), m_pitchAxis.rangeHalf());
-
-        m_strokeAxis.update(strokeTarget, nowMs);
-        m_rollAxis.update(rollTarget, nowMs);
-        m_pitchAxis.update(pitchTarget, nowMs);
+        if (m_deviceType == DeviceType::OSR_STEPPER)
+        {
+            executeOsr(nowMs, strokeTcode, rollTcode, pitchTcode);
+        }
+        else
+        {
+            // TODO: SR6 stepper kinematics
+        }
 
         pollTmcStatus(nowMs);
 
@@ -264,6 +266,7 @@ private:
     static constexpr int kDefaultAccel = 20000;   // steps/s^2
     static constexpr int kMinAccel = 100;         // prevent zero/negative accel
     static constexpr int kMaxAccel = 1000000;      // reasonable upper bound
+    static constexpr int kMaxTcodeSlewPerSec = 12000; // limit incoming slider jumps (units/sec)
     static constexpr int kSensorDeadbandSteps = 3;      // ignore tiny noise
     static constexpr int kSensorMaxStepJump = 200;      // limit sudden jumps per refresh
     static constexpr float kSensorAlpha = 0.2f;         // low-pass factor for sensor smoothing
@@ -276,8 +279,8 @@ private:
     static constexpr int kTmcUartTxPinDefault = 17;
     static constexpr int kTmcUartRxPinDefault = 16;
     static constexpr uint32_t kTmcUartBaudDefault = 115200;
-    static constexpr float kTmcRsenseDefault = 0.110f; // ohms (calculator: VSENSE=0, Rsense≈0.108)
-    static constexpr TmcAxisConfig kTmcStrokeConfigDefault{0, 1500, 750, 16, false, true};
+    static constexpr float kTmcRsenseDefault = 0.110f; // ohms
+    static constexpr TmcAxisConfig kTmcStrokeConfigDefault{0, 1500, 400, 16, false, true};
     static constexpr TmcAxisConfig kTmcRollConfigDefault{1, 700, 350, 16, false, true};
     static constexpr TmcAxisConfig kTmcPitchConfigDefault{2, 700, 350, 16, false, true};
 
@@ -285,6 +288,7 @@ private:
     SettingsFactory *m_settingsFactory = nullptr;
     PinMapOSRStepper *m_pinMap = nullptr;
     bool m_initFailed = false;
+    DeviceType m_deviceType = DeviceType::OSR;
 
     stepper::StepperAxis m_strokeAxis{"Stroke"};
     stepper::StepperAxis m_rollAxis{"Roll"};
@@ -312,9 +316,93 @@ private:
 
     inline static StepperHandler0_3 *s_instance = nullptr;
 
+    struct TcodeSlewState
+    {
+        int value = TCODE_MID;
+        uint32_t lastMs = 0;
+    };
+
+    TcodeSlewState m_strokeSlew;
+    TcodeSlewState m_rollSlew;
+    TcodeSlewState m_pitchSlew;
+
     long mapLong(long x, long inMin, long inMax, long outMin, long outMax)
     {
         return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+    }
+
+    long clampToAxis(long target, const stepper::StepperAxis &axis)
+    {
+        const long half = axis.rangeHalf();
+        if (target > half)
+        {
+            return half;
+        }
+        if (target < -half)
+        {
+            return -half;
+        }
+        return target;
+    }
+
+    long mapTcodeToAxisSteps(int tcode, const stepper::StepperAxis &axis, bool invert)
+    {
+        long steps = mapLong(tcode, TCODE_MIN, TCODE_MAX, -axis.rangeHalf(), axis.rangeHalf());
+        if (invert)
+        {
+            steps = -steps;
+        }
+        return steps;
+    }
+
+    int applyTcodeSlew(int target, TcodeSlewState &state, uint32_t nowMs)
+    {
+        target = std::max(TCODE_MIN, std::min(TCODE_MAX, target));
+        if (state.lastMs == 0)
+        {
+            state.value = target;
+            state.lastMs = nowMs;
+            return target;
+        }
+        const uint32_t dt = nowMs - state.lastMs;
+        if (dt == 0)
+        {
+            return state.value;
+        }
+        const int maxDelta = (kMaxTcodeSlewPerSec * static_cast<int>(dt)) / 1000;
+        int delta = target - state.value;
+        if (delta > maxDelta)
+        {
+            delta = maxDelta;
+        }
+        else if (delta < -maxDelta)
+        {
+            delta = -maxDelta;
+        }
+        state.value += delta;
+        state.lastMs = nowMs;
+        return state.value;
+    }
+
+    void executeOsr(uint32_t nowMs, int strokeTcode, int rollTcode, int pitchTcode)
+    {
+        strokeTcode = applyTcodeSlew(strokeTcode, m_strokeSlew, nowMs);
+        rollTcode = applyTcodeSlew(rollTcode, m_rollSlew, nowMs);
+        pitchTcode = applyTcodeSlew(pitchTcode, m_pitchSlew, nowMs);
+
+        // OSR2 steppers share parallel kinematics with the servo implementation
+        const long strokeSteps = mapTcodeToAxisSteps(strokeTcode, m_strokeAxis, m_settingsFactory->getInverseStroke());
+        const long rollSteps = mapTcodeToAxisSteps(rollTcode, m_rollAxis, false);
+        const long pitchSteps = mapTcodeToAxisSteps(pitchTcode, m_pitchAxis, m_settingsFactory->getInversePitch());
+
+        // Main actuators move in parallel: left = stroke + roll, right = -stroke + roll
+        const long leftTarget = clampToAxis(strokeSteps + rollSteps, m_strokeAxis);
+        const long rightTarget = clampToAxis(-strokeSteps + rollSteps, m_rollAxis);
+        const long pitchTarget = clampToAxis(pitchSteps, m_pitchAxis);
+
+        m_strokeAxis.update(leftTarget, nowMs);
+        m_rollAxis.update(rightTarget, nowMs);
+        m_pitchAxis.update(pitchTarget, nowMs);
     }
 
     int clampHz(int maxHz)

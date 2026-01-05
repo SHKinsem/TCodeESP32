@@ -190,6 +190,7 @@ public:
         int sensorMaxStepJump = 200;
         float sensorAlpha = 0.2f;
         int posSyncThresholdSteps = 100;
+        uint32_t sensorIdleSyncMs = 150; // require recent idle time before planner resync
     };
 
     StepperAxis() = default;
@@ -249,6 +250,12 @@ public:
             return;
         }
 
+        const bool running = m_stepper->isRunning();
+        if (running)
+        {
+            m_lastMotionMs = nowMs;
+        }
+
         if (m_encoder && nowMs - m_lastSensorPollMs >= m_cfg.sensorPollIntervalMs)
         {
             long sensorSteps = 0;
@@ -281,10 +288,16 @@ public:
 
                 long plannerPos = m_stepper->getCurrentPosition();
                 const long error = m_filteredSensorSteps - plannerPos;
-                if (std::abs(error) > m_cfg.posSyncThresholdSteps && !m_stepper->isRunning())
+                const bool idleLongEnough = (nowMs - m_lastMotionMs) >= m_cfg.sensorIdleSyncMs;
+                if (std::abs(error) > m_cfg.posSyncThresholdSteps && !running && idleLongEnough)
                 {
                     m_stepper->setCurrentPosition(m_filteredSensorSteps);
                     plannerPos = m_filteredSensorSteps;
+                    if (m_lastTarget != m_filteredSensorSteps)
+                    {
+                        // Reassert target after resync so planner keeps chasing the commanded point
+                        m_stepper->moveTo(m_lastTarget);
+                    }
                 }
                 m_lastPlannerSteps = plannerPos;
             }
@@ -295,6 +308,7 @@ public:
         {
             m_stepper->moveTo(target);
             m_lastTarget = target;
+            m_lastMotionMs = nowMs;
         }
         else
         {
@@ -378,6 +392,7 @@ private:
     int m_lastSensorRaw = -1;
     long m_lastPlannerSteps = 0;
     uint32_t m_lastSensorPollMs = 0;
+    uint32_t m_lastMotionMs = 0;
 };
 
 } // namespace stepper

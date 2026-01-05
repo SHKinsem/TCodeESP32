@@ -329,7 +329,7 @@ public:
         return true;
     }
 
-    static void getWifiInfo(char* buf)
+    static void getWifiInfo(char* buf, size_t bufSize)
     {
         JsonDocument doc; //100
 
@@ -354,8 +354,12 @@ public:
         doc.clear();
         if (LogHandler::getLogLevel() == LogLevel::VERBOSE)
             Serial.printf("Network Info: %s\n", output.c_str());
-        buf[0] = {0};
-        strcpy(buf, output.c_str());
+        if (!buf || bufSize == 0)
+        {
+            return;
+        }
+        buf[0] = 0;
+        strlcpy(buf, output.c_str(), bufSize);
     }
 
     static void getSystemInfo(String &buf)

@@ -53,8 +53,8 @@ class WebHandler : public HTTPBase {
             m_settingsFactory = SettingsFactory::getInstance();
             server->on("/wifiSettings", HTTP_GET, [](AsyncWebServerRequest *request) 
             {
-                char info[550];
-                SettingsHandler::getWifiInfo(info);
+                char info[1024];
+                SettingsHandler::getWifiInfo(info, sizeof(info));
                 if (strlen(info) == 0) {
                     AsyncWebServerResponse *response = request->beginResponse(504, "application/text", "Error getting wifi settings");
                     request->send(response);
